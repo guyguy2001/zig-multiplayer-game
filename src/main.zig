@@ -28,7 +28,33 @@ pub fn main() anyerror!void {
                 .radius = 50,
             },
         },
+        .tag = .player,
         .networked = true,
+    });
+    _ = entities.spawn(.{
+        .position = .{
+            .x = screenWidth / 8,
+            .y = screenHeight / 2,
+        },
+        .render = .{
+            .circle = .{
+                .color = .red,
+                .radius = 50,
+            },
+        },
+        .tag = .enemy,
+        .networked = false,
+    });
+    _ = entities.spawn(.{
+        .position = .{ .x = screenWidth * 7 / 8, .y = screenHeight / 2 },
+        .render = .{
+            .circle = .{
+                .color = .green,
+                .radius = 25,
+            },
+        },
+        .tag = .enemy,
+        .networked = false,
     });
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
@@ -37,6 +63,7 @@ pub fn main() anyerror!void {
         // TODO: Update your variables here
         //----------------------------------------------------------------------------------
         try systems.movePlayer(&entities, player);
+        systems.moveEnemies(&entities);
 
         // Draw
         //----------------------------------------------------------------------------------

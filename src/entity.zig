@@ -1,6 +1,11 @@
 const std = @import("std");
 const rl = @import("raylib");
 
+const Tag = enum {
+    player,
+    enemy,
+};
+
 const RenderTag = enum {
     circle,
     texture,
@@ -28,6 +33,9 @@ pub const Entity = struct {
     position: rl.Vector2,
     render: Render,
     networked: bool,
+    tag: Tag,
+    timestamp: i64 = 0,
+    direction: bool = false,
 };
 
 const EntitiesAccessError = error{
@@ -47,6 +55,7 @@ pub const EntityList = struct {
         }
         var ent = entity;
         ent.id = Id{ .generation = 0, .index = self.next_id };
+        ent.timestamp = std.time.milliTimestamp();
         self.entities[ent.id.index] = ent;
         self.is_alive[ent.id.index] = true;
         self.next_id += 1;

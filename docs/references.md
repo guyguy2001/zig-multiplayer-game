@@ -1,0 +1,1 @@
+- Sending inputs for deterministic simulations - https://web.archive.org/web/20180823010932/https://gafferongames.com/post/deterministic_lockstep/

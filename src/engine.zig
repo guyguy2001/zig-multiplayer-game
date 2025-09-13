@@ -122,24 +122,34 @@ pub const EntitiesIterator = struct {
 };
 
 pub const Time = struct {
-    previous_frame: i64,
-    current_frame: i64,
+    time_per_frame: i64,
+    game_start_time: i64,
+    frame_number: i64,
+
+    pub fn init(time_per_frame: i64) Time {
+        return Time{
+            .time_per_frame = time_per_frame,
+            .game_start_time = std.time.milliTimestamp(),
+            .frame_number = 0,
+        };
+    }
+
+    pub fn update(self: *@This()) void {
+        self.frame_number += 1;
+    }
 
     pub fn deltaMillis(self: *@This()) i64 {
-        return self.current_frame - self.previous_frame;
+        return self.time_per_frame;
     }
 
     pub fn deltaSecs(self: *@This()) f32 {
         return @as(f32, @floatFromInt(self.deltaMillis())) / 1000.0;
     }
-    pub fn update(self: *@This()) void {
-        self.previous_frame = self.current_frame;
-        self.current_frame = std.time.milliTimestamp();
-    }
 
-    pub fn now() Time {
-        const _now = std.time.milliTimestamp();
-        return .{ .current_frame = _now, .previous_frame = _now };
+    pub fn getDrift(self: *@This()) f32 {
+        return (@as(f32, @floatFromInt(std.time.milliTimestamp() - self.game_start_time)) /
+            @as(f32, @floatFromInt(self.time_per_frame))) -
+            @as(f32, @floatFromInt(self.frame_number));
     }
 };
 

@@ -8,11 +8,12 @@ pub fn main() anyerror!void {
     //--------------------------------------------------------------------------------------
     const screenWidth = 800;
     const screenHeight = 450;
+    const fps = 60;
 
     rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
     defer rl.closeWindow(); // Close window and OpenGL context
 
-    rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
+    rl.setTargetFPS(50); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
     var world = engine.World{
@@ -21,7 +22,7 @@ pub fn main() anyerror!void {
             .is_alive = [_]bool{false} ** 100,
             .next_id = 0x00,
         },
-        .time = .now(),
+        .time = engine.Time.init(1000 / fps),
     };
     const player = world.entities.spawn(.{
         .position = .{ .x = screenHeight / 2, .y = screenHeight / 2 },
@@ -101,6 +102,10 @@ pub fn main() anyerror!void {
         }
 
         rl.drawFPS(0, 0);
+        var b = [_]u8{0} ** 20;
+        const slice = try std.fmt.bufPrintZ(&b, "-{d}", .{world.time.getDrift()});
+        rl.drawText(slice, 0, 32, 32, .black);
+        std.debug.print("{d}\n", .{std.time.milliTimestamp()});
         // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
         //----------------------------------------------------------------------------------
     }

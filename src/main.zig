@@ -1,6 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
-const entity = @import("entity.zig");
+const engine = @import("engine.zig");
 const systems = @import("systems.zig");
 
 pub fn main() anyerror!void {
@@ -15,13 +15,17 @@ pub fn main() anyerror!void {
     rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
-    var entities = entity.EntityList{
-        .entities = undefined,
-        .is_alive = [_]bool{false} ** 100,
-        .next_id = 0x00,
+    var world = engine.World{
+        .entities = engine.EntityList{
+            .entities = undefined,
+            .is_alive = [_]bool{false} ** 100,
+            .next_id = 0x00,
+        },
+        .time = .now(),
     };
-    const player = entities.spawn(.{
+    const player = world.entities.spawn(.{
         .position = .{ .x = screenHeight / 2, .y = screenHeight / 2 },
+        .speed = 200,
         .render = .{
             .circle = .{
                 .color = .red,
@@ -31,22 +35,12 @@ pub fn main() anyerror!void {
         .tag = .player,
         .networked = true,
     });
-    _ = entities.spawn(.{
+    _ = world.entities.spawn(.{
         .position = .{
             .x = screenWidth / 8,
             .y = screenHeight / 2,
         },
-        .render = .{
-            .circle = .{
-                .color = .red,
-                .radius = 50,
-            },
-        },
-        .tag = .enemy,
-        .networked = false,
-    });
-    _ = entities.spawn(.{
-        .position = .{ .x = screenWidth * 7 / 8, .y = screenHeight / 2 },
+        .speed = 100,
         .render = .{
             .circle = .{
                 .color = .green,
@@ -55,15 +49,40 @@ pub fn main() anyerror!void {
         },
         .tag = .enemy,
         .networked = false,
+        .timer = engine.Timer{
+            .max = 1500,
+            .remaining = 750,
+            .just_finished = false,
+        },
     });
+    _ = world.entities.spawn(.{
+        .position = .{ .x = screenWidth * 7 / 8, .y = screenHeight / 2 },
+        .speed = 100,
+        .render = .{
+            .circle = .{
+                .color = .green,
+                .radius = 25,
+            },
+        },
+        .tag = .enemy,
+        .networked = false,
+        .timer = engine.Timer{
+            .max = 1500,
+            .remaining = 750,
+            .just_finished = false,
+        },
+    });
+    rl.setTargetFPS(60);
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // Update
         //----------------------------------------------------------------------------------
         // TODO: Update your variables here
         //----------------------------------------------------------------------------------
-        try systems.movePlayer(&entities, player);
-        systems.moveEnemies(&entities);
+        world.time.update();
+
+        try systems.movePlayer(&world, player);
+        systems.moveEnemies(&world);
 
         // Draw
         //----------------------------------------------------------------------------------
@@ -71,7 +90,7 @@ pub fn main() anyerror!void {
         defer rl.endDrawing();
 
         rl.clearBackground(.light_gray);
-        var iter = entities.iter();
+        var iter = world.entities.iter();
         while (iter.next()) |ent| {
             switch (ent.render) {
                 .circle => |circle| {
@@ -80,7 +99,9 @@ pub fn main() anyerror!void {
                 .texture => {},
             }
         }
-        rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
+
+        rl.drawFPS(0, 0);
+        // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
         //----------------------------------------------------------------------------------
     }
 }

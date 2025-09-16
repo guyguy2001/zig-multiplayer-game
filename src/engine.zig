@@ -4,17 +4,25 @@ const rl = @import("raylib");
 const Tag = enum {
     player,
     enemy,
+    ui,
 };
 
 const RenderTag = enum {
     circle,
+    button,
     texture,
 };
 
 const Render = union(RenderTag) {
     circle: struct {
-        radius: f32,
         color: rl.Color,
+        radius: f32,
+    },
+    button: struct {
+        color: rl.Color,
+        text: *const [10:0]u8,
+        width: f32,
+        height: f32,
     },
     texture: struct {
         path: [*:0]u8,
@@ -58,7 +66,7 @@ pub const Timer = struct {
 pub const Entity = struct {
     id: Id = .invalid,
     position: rl.Vector2,
-    speed: f32,
+    speed: f32 = 0,
     render: Render,
     networked: bool,
     tag: Tag,

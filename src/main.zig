@@ -1,7 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const engine = @import("engine.zig");
-const systems = @import("systems.zig");
+const game_systems = @import("game_systems.zig");
 
 pub fn main() anyerror!void {
     // Initialization
@@ -73,7 +73,25 @@ pub fn main() anyerror!void {
             .just_finished = false,
         },
     });
+    _ = world.entities.spawn(.{
+        .position = .{ .x = screenWidth / 2, .y = screenHeight / 4 },
+        .render = .{
+            .button = .{ .color = .red, .text = "Client [C]", .width = 300, .height = 100 },
+        },
+        .tag = .ui,
+        .networked = false,
+    });
+    _ = world.entities.spawn(.{
+        .position = .{ .x = screenWidth / 2, .y = screenHeight / 4 * 3 },
+        .render = .{
+            .button = .{ .color = .red, .text = "Server [S]", .width = 300, .height = 100 },
+        },
+        .tag = .ui,
+        .networked = false,
+    });
+
     rl.setTargetFPS(60);
+
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // Update
@@ -82,8 +100,8 @@ pub fn main() anyerror!void {
         //----------------------------------------------------------------------------------
         world.time.update();
 
-        try systems.movePlayer(&world, player);
-        systems.moveEnemies(&world);
+        try game_systems.movePlayer(&world, player);
+        game_systems.moveEnemies(&world);
 
         // Draw
         //----------------------------------------------------------------------------------
@@ -95,7 +113,28 @@ pub fn main() anyerror!void {
         while (iter.next()) |ent| {
             switch (ent.render) {
                 .circle => |circle| {
-                    rl.drawCircle(@intFromFloat(ent.position.x), @intFromFloat(ent.position.y), circle.radius, circle.color);
+                    rl.drawCircle(
+                        @intFromFloat(ent.position.x),
+                        @intFromFloat(ent.position.y),
+                        circle.radius,
+                        circle.color,
+                    );
+                },
+                .button => |button| {
+                    rl.drawRectangleLines(
+                        @intFromFloat(ent.position.x - button.width / 2),
+                        @intFromFloat(ent.position.y - button.height / 2),
+                        @intFromFloat(button.width),
+                        @intFromFloat(button.height),
+                        button.color,
+                    );
+                    rl.drawText(
+                        button.text,
+                        @intFromFloat(ent.position.x - 40),
+                        @intFromFloat(ent.position.y - 10),
+                        20,
+                        button.color,
+                    );
                 },
                 .texture => {},
             }

@@ -1,5 +1,6 @@
 const std = @import("std");
 const rl = @import("raylib");
+const game_net = @import("game_net.zig");
 
 const Tag = enum {
     player,
@@ -176,5 +177,4 @@ pub const World = struct {
     time: Time,
     screen_size: rl.Vector2,
     state: State,
-    // network:
 };

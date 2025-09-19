@@ -9,15 +9,13 @@ pub const NetworkMessage = struct {
     data: [4]u8,
 };
 
-pub const NetworkRoleTag = enum {
+pub const NetworkRole = enum {
     client,
     server,
 };
-pub const NetworkRole = union(NetworkRoleTag) {
+pub const NetworkState = union(NetworkRole) {
     client: struct { socket: posix.socket_t },
-    server: struct {
-        server: std.net.Server,
-    },
+    server: struct { socket: posix.socket_t },
 
     pub fn cleanup(self: *@This()) !void {
         switch (self.*) {
@@ -25,22 +23,23 @@ pub const NetworkRole = union(NetworkRoleTag) {
                 posix.close(c.socket);
             },
             .server => |s| {
-                _ = s; // autofix
-
+                posix.close(s.socket);
             },
         }
     }
 };
 
-pub fn connectToServer() !void {
+pub fn connectToServer() !NetworkState {
     const sockfd = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM | posix.SOCK.CLOEXEC, 0);
     errdefer posix.close(sockfd);
 
     try posix.connect(sockfd, &server_address.any, server_address.getOsSockLen());
     _ = try posix.send(sockfd, @as(*const [3:0]u8, "foo"), 0);
+
+    return NetworkState{ .client = .{ .socket = sockfd } };
 }
 
-pub fn waitForConnection() !posix.socket_t {
+pub fn waitForConnection() !NetworkState {
     const sock = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(sock);
 
@@ -51,7 +50,7 @@ pub fn waitForConnection() !posix.socket_t {
     var buff: [4]u8 = undefined;
     _ = try posix.recv(sock, &buff, 0);
     std.debug.print("Got stuff in my buffer {s}", .{buff});
-    return sock;
+    return NetworkState{ .server = .{ .socket = sock } };
 }
 
 // fn sendToServer(world: *World) {

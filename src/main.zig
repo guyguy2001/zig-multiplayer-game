@@ -44,6 +44,8 @@ pub fn main() anyerror!void {
         .networked = false,
     });
 
+    var network: ?game_net.NetworkState = null;
+
     rl.setTargetFPS(60);
 
     // Main game loop
@@ -57,13 +59,12 @@ pub fn main() anyerror!void {
             .menu => {
                 if (rl.isKeyPressed(.c)) {
                     std.debug.print("Client\n", .{});
-                    _ = try game_net.connectToServer();
-                    world.state = .game;
-                    hideMenu(&world);
-                    spawnGame(&world);
+                    network = try game_net.connectToServer();
                 } else if (rl.isKeyPressed(.s)) {
                     std.debug.print("Server\n", .{});
-                    _ = try game_net.waitForConnection();
+                    network = try game_net.waitForConnection();
+                }
+                if (network) |_| {
                     world.state = .game;
                     hideMenu(&world);
                     spawnGame(&world);
@@ -122,6 +123,9 @@ pub fn main() anyerror!void {
         }
         // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
         //----------------------------------------------------------------------------------
+    }
+    if (network) |*net| {
+        try net.cleanup();
     }
 }
 

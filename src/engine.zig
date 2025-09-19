@@ -170,9 +170,11 @@ pub const State = enum {
     menu,
     game,
 };
+
 pub const World = struct {
     entities: EntityList,
     time: Time,
     screen_size: rl.Vector2,
     state: State,
+    // network:
 };

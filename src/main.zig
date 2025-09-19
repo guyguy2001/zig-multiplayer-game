@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const engine = @import("engine.zig");
 const game_systems = @import("game_systems.zig");
+const game_net = @import("game_net.zig");
 
 pub fn main() anyerror!void {
     // Initialization
@@ -56,11 +57,13 @@ pub fn main() anyerror!void {
             .menu => {
                 if (rl.isKeyPressed(.c)) {
                     std.debug.print("Client\n", .{});
+                    _ = try game_net.connectToServer();
                     world.state = .game;
                     hideMenu(&world);
                     spawnGame(&world);
                 } else if (rl.isKeyPressed(.s)) {
                     std.debug.print("Server\n", .{});
+                    _ = try game_net.waitForConnection();
                     world.state = .game;
                     hideMenu(&world);
                     spawnGame(&world);

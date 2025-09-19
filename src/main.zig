@@ -23,56 +23,9 @@ pub fn main() anyerror!void {
             .next_id = 0x00,
         },
         .time = engine.Time.init(1000 / fps),
+        .screen_size = rl.Vector2.init(screenHeight, screenHeight),
+        .state = .menu,
     };
-    const player = world.entities.spawn(.{
-        .position = .{ .x = screenHeight / 2, .y = screenHeight / 2 },
-        .speed = 200,
-        .render = .{
-            .circle = .{
-                .color = .red,
-                .radius = 50,
-            },
-        },
-        .tag = .player,
-        .networked = true,
-    });
-    _ = world.entities.spawn(.{
-        .position = .{
-            .x = screenWidth / 8,
-            .y = screenHeight / 2,
-        },
-        .speed = 100,
-        .render = .{
-            .circle = .{
-                .color = .green,
-                .radius = 25,
-            },
-        },
-        .tag = .enemy,
-        .networked = false,
-        .timer = engine.Timer{
-            .max = 1500,
-            .remaining = 750,
-            .just_finished = false,
-        },
-    });
-    _ = world.entities.spawn(.{
-        .position = .{ .x = screenWidth * 7 / 8, .y = screenHeight / 2 },
-        .speed = 100,
-        .render = .{
-            .circle = .{
-                .color = .green,
-                .radius = 25,
-            },
-        },
-        .tag = .enemy,
-        .networked = false,
-        .timer = engine.Timer{
-            .max = 1500,
-            .remaining = 750,
-            .just_finished = false,
-        },
-    });
     _ = world.entities.spawn(.{
         .position = .{ .x = screenWidth / 2, .y = screenHeight / 4 },
         .render = .{
@@ -98,10 +51,27 @@ pub fn main() anyerror!void {
         //----------------------------------------------------------------------------------
         // TODO: Update your variables here
         //----------------------------------------------------------------------------------
-        world.time.update();
 
-        try game_systems.movePlayer(&world, player);
-        game_systems.moveEnemies(&world);
+        switch (world.state) {
+            .menu => {
+                if (rl.isKeyPressed(.c)) {
+                    std.debug.print("Client\n", .{});
+                    world.state = .game;
+                    hideMenu(&world);
+                    spawnGame(&world);
+                } else if (rl.isKeyPressed(.s)) {
+                    std.debug.print("Server\n", .{});
+                    world.state = .game;
+                    hideMenu(&world);
+                    spawnGame(&world);
+                }
+            },
+            .game => {
+                world.time.update();
+                game_systems.movePlayer(&world);
+                game_systems.moveEnemies(&world);
+            },
+        }
 
         // Draw
         //----------------------------------------------------------------------------------
@@ -111,6 +81,7 @@ pub fn main() anyerror!void {
         rl.clearBackground(.light_gray);
         var iter = world.entities.iter();
         while (iter.next()) |ent| {
+            if (!ent.visible) continue;
             switch (ent.render) {
                 .circle => |circle| {
                     rl.drawCircle(
@@ -140,12 +111,75 @@ pub fn main() anyerror!void {
             }
         }
 
-        rl.drawFPS(0, 0);
-        var b = [_]u8{0} ** 20;
-        const slice = try std.fmt.bufPrintZ(&b, "-{d}", .{world.time.getDrift()});
-        rl.drawText(slice, 0, 32, 32, .black);
-        std.debug.print("{d}\n", .{std.time.milliTimestamp()});
+        if (world.state == .game) {
+            rl.drawFPS(0, 0);
+            var b = [_]u8{0} ** 20;
+            const slice = try std.fmt.bufPrintZ(&b, "-{d}", .{world.time.getDrift()});
+            rl.drawText(slice, 0, 32, 32, .black);
+        }
         // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
         //----------------------------------------------------------------------------------
     }
+}
+
+pub fn hideMenu(world: *engine.World) void {
+    var iter = world.entities.iter();
+    while (iter.next()) |ent| {
+        if (ent.tag == .ui) {
+            ent.visible = false;
+        }
+    }
+}
+pub fn spawnGame(world: *engine.World) void {
+    world.time.reset();
+    const screen_size = world.screen_size;
+    _ = world.entities.spawn(.{
+        .position = .{ .x = screen_size.x / 2, .y = screen_size.y / 2 },
+        .speed = 200,
+        .render = .{
+            .circle = .{
+                .color = .red,
+                .radius = 50,
+            },
+        },
+        .tag = .player,
+        .networked = true,
+    });
+    _ = world.entities.spawn(.{
+        .position = .{
+            .x = screen_size.x / 8,
+            .y = screen_size.y / 2,
+        },
+        .speed = 100,
+        .render = .{
+            .circle = .{
+                .color = .green,
+                .radius = 25,
+            },
+        },
+        .tag = .enemy,
+        .networked = false,
+        .timer = engine.Timer{
+            .max = 1500,
+            .remaining = 750,
+            .just_finished = false,
+        },
+    });
+    _ = world.entities.spawn(.{
+        .position = .{ .x = screen_size.x * 7 / 8, .y = screen_size.y / 2 },
+        .speed = 100,
+        .render = .{
+            .circle = .{
+                .color = .green,
+                .radius = 25,
+            },
+        },
+        .tag = .enemy,
+        .networked = false,
+        .timer = engine.Timer{
+            .max = 1500,
+            .remaining = 750,
+            .just_finished = false,
+        },
+    });
 }

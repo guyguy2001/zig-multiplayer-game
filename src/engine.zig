@@ -72,6 +72,7 @@ pub const Entity = struct {
     tag: Tag,
     timer: Timer = .invalid(),
     direction: bool = false,
+    visible: bool = true,
 };
 
 const EntitiesAccessError = error{
@@ -142,6 +143,10 @@ pub const Time = struct {
         };
     }
 
+    pub fn reset(self: *@This()) void {
+        self.game_start_time = std.time.milliTimestamp();
+    }
+
     pub fn update(self: *@This()) void {
         self.frame_number += 1;
     }
@@ -161,7 +166,13 @@ pub const Time = struct {
     }
 };
 
+pub const State = enum {
+    menu,
+    game,
+};
 pub const World = struct {
     entities: EntityList,
     time: Time,
+    screen_size: rl.Vector2,
+    state: State,
 };

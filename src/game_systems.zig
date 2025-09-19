@@ -2,9 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const engine = @import("engine.zig");
 
-pub fn movePlayer(world: *engine.World, player_id: engine.Id) !void {
-    const player = try world.entities.get(player_id);
-
+pub fn movePlayer(world: *engine.World) void {
     var direction = rl.Vector2.zero();
     if (rl.isKeyDown(.up) or rl.isKeyDown(.w)) {
         direction = direction.add(rl.Vector2.init(0, -1));
@@ -18,8 +16,14 @@ pub fn movePlayer(world: *engine.World, player_id: engine.Id) !void {
     if (rl.isKeyDown(.right) or rl.isKeyDown(.d)) {
         direction = direction.add(rl.Vector2.init(1, 0));
     }
-    const magnitude = world.time.deltaSecs() * player.speed;
-    player.position = player.position.add(direction.normalize().scale(magnitude));
+
+    var iter = world.entities.iter();
+    while (iter.next()) |player| {
+        if (player.tag == .player) {
+            const magnitude = world.time.deltaSecs() * player.speed;
+            player.position = player.position.add(direction.normalize().scale(magnitude));
+        }
+    }
 }
 
 pub fn moveEnemies(world: *engine.World) void {

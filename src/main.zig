@@ -71,8 +71,16 @@ pub fn main() anyerror!void {
                 }
             },
             .game => {
+                const input = switch (network.?) {
+                    .server => |s| try game_net.receiveInput(&s),
+                    .client => |c| blk: {
+                        const i = engine.Input.fromRaylib();
+                        try game_net.sendInput(&c, i);
+                        break :blk i;
+                    },
+                };
                 world.time.update();
-                game_systems.movePlayer(&world);
+                game_systems.movePlayer(&world, input);
                 game_systems.moveEnemies(&world);
             },
         }

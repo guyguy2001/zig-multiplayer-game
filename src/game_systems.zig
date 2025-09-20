@@ -1,19 +1,18 @@
 const std = @import("std");
 const rl = @import("raylib");
 const engine = @import("engine.zig");
-
-pub fn movePlayer(world: *engine.World) void {
+pub fn movePlayer(world: *engine.World, input: engine.Input) void {
     var direction = rl.Vector2.zero();
-    if (rl.isKeyDown(.up) or rl.isKeyDown(.w)) {
+    if (input.up) {
         direction = direction.add(rl.Vector2.init(0, -1));
     }
-    if (rl.isKeyDown(.left) or rl.isKeyDown(.a)) {
+    if (input.left) {
         direction = direction.add(rl.Vector2.init(-1, 0));
     }
-    if (rl.isKeyDown(.down) or rl.isKeyDown(.s)) {
+    if (input.down) {
         direction = direction.add(rl.Vector2.init(0, 1));
     }
-    if (rl.isKeyDown(.right) or rl.isKeyDown(.d)) {
+    if (input.right) {
         direction = direction.add(rl.Vector2.init(1, 0));
     }
 

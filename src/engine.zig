@@ -178,3 +178,19 @@ pub const World = struct {
     screen_size: rl.Vector2,
     state: State,
 };
+
+pub const Input = packed struct {
+    up: bool,
+    left: bool,
+    down: bool,
+    right: bool,
+
+    pub fn fromRaylib() Input {
+        return .{
+            .up = rl.isKeyDown(.up) or rl.isKeyDown(.w),
+            .left = rl.isKeyDown(.left) or rl.isKeyDown(.a),
+            .down = rl.isKeyDown(.down) or rl.isKeyDown(.s),
+            .right = rl.isKeyDown(.right) or rl.isKeyDown(.d),
+        };
+    }
+};

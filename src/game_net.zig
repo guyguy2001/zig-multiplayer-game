@@ -1,21 +1,29 @@
-const engine = @import("engine");
+const engine = @import("engine.zig");
 const std = @import("std");
 const posix = std.posix;
 
 const port = 12348;
 const server_address = std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, port);
 
-pub const NetworkMessage = struct {
-    data: [4]u8,
+pub const NetworkMessage = packed struct {
+    input: engine.Input,
 };
 
 pub const NetworkRole = enum {
     client,
     server,
 };
+
+pub const Server = struct {
+    socket: posix.socket_t,
+};
+pub const Client = struct {
+    socket: posix.socket_t,
+};
+
 pub const NetworkState = union(NetworkRole) {
-    client: struct { socket: posix.socket_t },
-    server: struct { socket: posix.socket_t },
+    client: Client,
+    server: Server,
 
     pub fn cleanup(self: *@This()) !void {
         switch (self.*) {
@@ -53,6 +61,18 @@ pub fn waitForConnection() !NetworkState {
     return NetworkState{ .server = .{ .socket = sock } };
 }
 
-// fn sendToServer(world: *World) {
+pub fn sendInput(client: *const Client, input: engine.Input) !void {
+    const message = NetworkMessage{ .input = input };
+    const ptr: *const u8 = @ptrCast(&message);
 
-// }
+    _ = try posix.send(client.socket, ptr[0..@sizeOf(@TypeOf(message))], 0);
+}
+
+pub fn receiveInput(server: *const Server) !engine.Input {
+    var buff: [@sizeOf(NetworkMessage)]u8 = undefined;
+
+    _ = try posix.recv(server.socket, &buff, 0);
+    // TODO: assert received len == sizeof
+    const message_ptr: *NetworkMessage = @ptrCast(&buff);
+    return message_ptr.input;
+}

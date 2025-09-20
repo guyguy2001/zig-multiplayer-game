@@ -3,9 +3,11 @@ const rl = @import("raylib");
 const engine = @import("engine.zig");
 const game_systems = @import("game_systems.zig");
 const game_net = @import("game_net.zig");
+const config = @import("config");
 
 pub fn main() anyerror!void {
     // Initialization
+    std.debug.print("is server: {}\n", .{config.is_server});
     //--------------------------------------------------------------------------------------
     const screenWidth = 800;
     const screenHeight = 450;
@@ -24,29 +26,21 @@ pub fn main() anyerror!void {
             .next_id = 0x00,
         },
         .time = engine.Time.init(1000 / fps),
-        .screen_size = rl.Vector2.init(screenHeight, screenHeight),
+        .screen_size = rl.Vector2.init(screenWidth, screenHeight),
         .state = .menu,
     };
-    _ = world.entities.spawn(.{
-        .position = .{ .x = screenWidth / 2, .y = screenHeight / 4 },
-        .render = .{
-            .button = .{ .color = .red, .text = "Client [C]", .width = 300, .height = 100 },
-        },
-        .tag = .ui,
-        .networked = false,
-    });
-    _ = world.entities.spawn(.{
-        .position = .{ .x = screenWidth / 2, .y = screenHeight / 4 * 3 },
-        .render = .{
-            .button = .{ .color = .red, .text = "Server [S]", .width = 300, .height = 100 },
-        },
-        .tag = .ui,
-        .networked = false,
-    });
-
-    var network: ?game_net.NetworkState = null;
 
     rl.setTargetFPS(60);
+
+    // TODO: add a menu back to the game, maybe allow via build/commandline options to skip it
+    world.state = .game;
+    hideMenu(&world);
+    spawnGame(&world);
+    var network: game_net.NetworkState =
+        (if (config.is_server)
+            try game_net.waitForConnection()
+        else
+            try game_net.connectToServer());
 
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
@@ -57,21 +51,10 @@ pub fn main() anyerror!void {
 
         switch (world.state) {
             .menu => {
-                if (rl.isKeyPressed(.c)) {
-                    std.debug.print("Client\n", .{});
-                    network = try game_net.connectToServer();
-                } else if (rl.isKeyPressed(.s)) {
-                    std.debug.print("Server\n", .{});
-                    network = try game_net.waitForConnection();
-                }
-                if (network) |_| {
-                    world.state = .game;
-                    hideMenu(&world);
-                    spawnGame(&world);
-                }
+                unreachable;
             },
             .game => {
-                const input = switch (network.?) {
+                const input = switch (network) {
                     .server => |s| try game_net.receiveInput(&s),
                     .client => |c| blk: {
                         const i = engine.Input.fromRaylib();
@@ -132,12 +115,30 @@ pub fn main() anyerror!void {
         // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
         //----------------------------------------------------------------------------------
     }
-    if (network) |*net| {
-        try net.cleanup();
-    }
+    try network.cleanup();
 }
 
-pub fn hideMenu(world: *engine.World) void {
+// Currently unused, as the server/client is passed in the build options.
+fn spawnMenu(world: *engine.World) void {
+    _ = world.entities.spawn(.{
+        .position = .{ .x = world.screen_size.x / 2, .y = world.screen_size.y / 4 },
+        .render = .{
+            .button = .{ .color = .red, .text = "Client [C]", .width = 300, .height = 100 },
+        },
+        .tag = .ui,
+        .networked = false,
+    });
+    _ = world.entities.spawn(.{
+        .position = .{ .x = world.screen_size.x / 2, .y = world.screen_size.y / 4 * 3 },
+        .render = .{
+            .button = .{ .color = .red, .text = "Server [S]", .width = 300, .height = 100 },
+        },
+        .tag = .ui,
+        .networked = false,
+    });
+}
+
+fn hideMenu(world: *engine.World) void {
     var iter = world.entities.iter();
     while (iter.next()) |ent| {
         if (ent.tag == .ui) {
@@ -145,7 +146,7 @@ pub fn hideMenu(world: *engine.World) void {
         }
     }
 }
-pub fn spawnGame(world: *engine.World) void {
+fn spawnGame(world: *engine.World) void {
     world.time.reset();
     const screen_size = world.screen_size;
     _ = world.entities.spawn(.{

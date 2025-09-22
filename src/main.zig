@@ -4,16 +4,37 @@ const engine = @import("engine.zig");
 const game_systems = @import("game_systems.zig");
 const game_net = @import("game_net.zig");
 const config = @import("config");
+const argsParser = @import("args");
 
 pub fn main() anyerror!void {
     // Initialization
-    std.debug.print("is server: {}\n", .{config.is_server});
+    const argsAllocator = std.heap.page_allocator;
     //--------------------------------------------------------------------------------------
+    const options = argsParser.parseForCurrentProcess(struct {
+        // This declares long options for double hyphen
+        @"client-id": u8 = 0,
+    }, argsAllocator, .print) catch return;
+    defer options.deinit();
+
+    const client_id = options.options.@"client-id";
+
+    std.debug.print("is server: {}\n", .{config.is_server});
+    if (!config.is_server) {
+        std.debug.print("client id: {}", .{client_id});
+    }
+
     const screenWidth = 800;
     const screenHeight = 450;
     const fps = 60;
 
     rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
+    if (!config.is_server) {
+        switch (client_id) {
+            0 => rl.setWindowPosition(0, 0),
+            1 => rl.setWindowPosition(screenWidth, 0),
+            else => {},
+        }
+    }
     defer rl.closeWindow(); // Close window and OpenGL context
 
     rl.setTargetFPS(50); // Set our game to run at 60 frames-per-second

@@ -64,12 +64,16 @@ pub const Timer = struct {
     }
 };
 
+pub const NetworkedEntity = struct {
+    owner_id: game_net.ClientId,
+};
+
 pub const Entity = struct {
     id: Id = .invalid,
     position: rl.Vector2,
     speed: f32 = 0,
     render: Render,
-    networked: bool,
+    network: ?NetworkedEntity = null,
     tag: Tag,
     timer: Timer = .invalid(),
     direction: bool = false,

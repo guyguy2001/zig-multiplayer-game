@@ -1,8 +1,8 @@
 zig build run -Dserver &
 pid1=$!
-zig build run -- --client-id 0 &
-pid2=$!
 zig build run -- --client-id 1 &
+pid2=$!
+zig build run -- --client-id 2 &
 pid3=$!
 
 # Wait for user input

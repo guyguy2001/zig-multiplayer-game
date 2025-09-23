@@ -12,11 +12,11 @@ pub fn main() anyerror!void {
     //--------------------------------------------------------------------------------------
     const options = argsParser.parseForCurrentProcess(struct {
         // This declares long options for double hyphen
-        @"client-id": u8 = 0,
+        @"client-id": u4 = 0,
     }, argsAllocator, .print) catch return;
     defer options.deinit();
 
-    const client_id = options.options.@"client-id";
+    const client_id = game_net.ClientId{ .value = options.options.@"client-id" };
 
     std.debug.print("is server: {}\n", .{config.is_server});
     if (!config.is_server) {
@@ -29,9 +29,9 @@ pub fn main() anyerror!void {
 
     rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
     if (!config.is_server) {
-        switch (client_id) {
-            0 => rl.setWindowPosition(0, 0),
-            1 => rl.setWindowPosition(screenWidth, 0),
+        switch (client_id.value) {
+            1 => rl.setWindowPosition(0, 0),
+            2 => rl.setWindowPosition(screenWidth, 0),
             else => {},
         }
     }
@@ -61,7 +61,7 @@ pub fn main() anyerror!void {
         (if (config.is_server)
             try game_net.waitForConnection()
         else
-            try game_net.connectToServer());
+            try game_net.connectToServer(client_id));
 
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
@@ -147,7 +147,6 @@ fn spawnMenu(world: *engine.World) void {
             .button = .{ .color = .red, .text = "Client [C]", .width = 300, .height = 100 },
         },
         .tag = .ui,
-        .networked = false,
     });
     _ = world.entities.spawn(.{
         .position = .{ .x = world.screen_size.x / 2, .y = world.screen_size.y / 4 * 3 },
@@ -155,7 +154,6 @@ fn spawnMenu(world: *engine.World) void {
             .button = .{ .color = .red, .text = "Server [S]", .width = 300, .height = 100 },
         },
         .tag = .ui,
-        .networked = false,
     });
 }
 
@@ -171,7 +169,7 @@ fn spawnGame(world: *engine.World) void {
     world.time.reset();
     const screen_size = world.screen_size;
     _ = world.entities.spawn(.{
-        .position = .{ .x = screen_size.x / 2, .y = screen_size.y / 2 },
+        .position = .{ .x = screen_size.x / 3, .y = screen_size.y / 2 },
         .speed = 200,
         .render = .{
             .circle = .{
@@ -180,7 +178,19 @@ fn spawnGame(world: *engine.World) void {
             },
         },
         .tag = .player,
-        .networked = true,
+        .network = .{ .owner_id = .client_id(1) },
+    });
+    _ = world.entities.spawn(.{
+        .position = .{ .x = screen_size.x / 3 * 2, .y = screen_size.y / 2 },
+        .speed = 200,
+        .render = .{
+            .circle = .{
+                .color = .red,
+                .radius = 50,
+            },
+        },
+        .tag = .player,
+        .network = .{ .owner_id = .client_id(2) },
     });
     _ = world.entities.spawn(.{
         .position = .{
@@ -195,7 +205,6 @@ fn spawnGame(world: *engine.World) void {
             },
         },
         .tag = .enemy,
-        .networked = false,
         .timer = engine.Timer{
             .max = 1500,
             .remaining = 750,
@@ -212,7 +221,6 @@ fn spawnGame(world: *engine.World) void {
             },
         },
         .tag = .enemy,
-        .networked = false,
         .timer = engine.Timer{
             .max = 1500,
             .remaining = 750,

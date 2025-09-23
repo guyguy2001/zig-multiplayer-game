@@ -5,7 +5,17 @@ const posix = std.posix;
 const port = 12348;
 const server_address = std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, port);
 
-pub const NetworkMessage = packed struct {
+pub const ClientId = packed struct {
+    value: u4,
+
+    pub fn client_id(value: u4) ClientId {
+        return ClientId{ .value = value };
+    }
+};
+
+/// A message sent from the client to the server, with the current input state.
+pub const InputMessage = packed struct {
+    client_id: ClientId,
     input: engine.Input,
 };
 
@@ -18,6 +28,7 @@ pub const Server = struct {
     socket: posix.socket_t,
 };
 pub const Client = struct {
+    id: ClientId,
     socket: posix.socket_t,
 };
 
@@ -37,14 +48,17 @@ pub const NetworkState = union(NetworkRole) {
     }
 };
 
-pub fn connectToServer() !NetworkState {
+pub fn connectToServer(id: ClientId) !NetworkState {
     const sockfd = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM | posix.SOCK.CLOEXEC, 0);
     errdefer posix.close(sockfd);
 
     try posix.connect(sockfd, &server_address.any, server_address.getOsSockLen());
     _ = try posix.send(sockfd, @as(*const [3:0]u8, "foo"), 0);
 
-    return NetworkState{ .client = .{ .socket = sockfd } };
+    return NetworkState{ .client = .{
+        .socket = sockfd,
+        .id = id,
+    } };
 }
 
 pub fn waitForConnection() !NetworkState {
@@ -62,17 +76,17 @@ pub fn waitForConnection() !NetworkState {
 }
 
 pub fn sendInput(client: *const Client, input: engine.Input) !void {
-    const message = NetworkMessage{ .input = input };
-    const ptr: *const u8 = @ptrCast(&message);
+    const message = InputMessage{ .client_id = client.id, .input = input };
+    const ptr: []const u8 = @ptrCast(&message);
 
     _ = try posix.send(client.socket, ptr[0..@sizeOf(@TypeOf(message))], 0);
 }
 
 pub fn receiveInput(server: *const Server) !engine.Input {
-    var buff: [@sizeOf(NetworkMessage)]u8 = undefined;
+    var buff: [@sizeOf(InputMessage)]u8 align(@alignOf(InputMessage)) = undefined;
 
     _ = try posix.recv(server.socket, &buff, 0);
     // TODO: assert received len == sizeof
-    const message_ptr: *NetworkMessage = @ptrCast(&buff);
+    const message_ptr: *InputMessage = @ptrCast(&buff);
     return message_ptr.input;
 }

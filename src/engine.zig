@@ -78,6 +78,16 @@ pub const Entity = struct {
     timer: Timer = .invalid(),
     direction: bool = false,
     visible: bool = true,
+
+    // TODO: Switch from ClientId to NetowrkIdentity (which is either Server{} or Client{id: u8?})
+    pub fn isSimulatedLocally(self: *@This(), client_id: game_net.ClientId) bool {
+        if (self.network) |net| {
+            return net.owner_id.value == client_id.value;
+        } else {
+            // Any entity which isn't networked has to be simulated by us (currently unused)
+            return true;
+        }
+    }
 };
 
 const EntitiesAccessError = error{

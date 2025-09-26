@@ -7,6 +7,7 @@ const config = @import("config");
 const argsParser = @import("args");
 
 pub fn main() anyerror!void {
+    std.debug.print("Foo: {}\n", .{@sizeOf(game_net.Message)});
     // Initialization
     const argsAllocator = std.heap.page_allocator;
     //--------------------------------------------------------------------------------------
@@ -20,13 +21,14 @@ pub fn main() anyerror!void {
 
     std.debug.print("is server: {}\n", .{config.is_server});
     if (!config.is_server) {
-        std.debug.print("client id: {}", .{client_id});
+        std.debug.print("client id: {}\n", .{client_id});
     }
 
     const screenWidth = 800;
     const screenHeight = 450;
     const fps = 60;
 
+    rl.setTraceLogLevel(.none);
     rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
     if (!config.is_server) {
         switch (client_id.value) {
@@ -79,12 +81,12 @@ pub fn main() anyerror!void {
                     .server => |s| try game_net.receiveInput(&s),
                     .client => |c| blk: {
                         const i = engine.Input.fromRaylib();
-                        try game_net.sendInput(&c, i);
+                        try game_net.sendInput(&c, i, world.time.frame_number);
                         break :blk i;
                     },
                 };
                 world.time.update();
-                game_systems.movePlayer(&world, input);
+                game_systems.movePlayer(&world, input, client_id);
                 game_systems.moveEnemies(&world);
             },
         }

@@ -51,6 +51,7 @@ pub fn main() anyerror!void {
         .time = engine.Time.init(1000 / fps),
         .screen_size = rl.Vector2.init(screenWidth, screenHeight),
         .state = .menu,
+        .input_map = [_]engine.Input{.empty()} ** 3,
     };
 
     rl.setTargetFPS(60);
@@ -77,16 +78,22 @@ pub fn main() anyerror!void {
                 unreachable;
             },
             .game => {
-                const input = switch (network) {
-                    .server => |s| try game_net.receiveInput(&s),
-                    .client => |c| blk: {
-                        const i = engine.Input.fromRaylib();
-                        try game_net.sendInput(&c, i, world.time.frame_number);
-                        break :blk i;
-                    },
-                };
                 world.time.update();
-                game_systems.movePlayer(&world, input, client_id);
+                switch (network) {
+                    .server => |s| {
+                        while (try game_net.hasInputWaiting(&s)) {
+                            const message = try game_net.receiveInput(&s);
+                            world.input_map[message.client_id.value] = message.input;
+                        }
+                        game_systems.serverMovePlayers(&world);
+                    },
+
+                    .client => |c| {
+                        const input = engine.Input.fromRaylib();
+                        try game_net.sendInput(&c, input, world.time.frame_number);
+                        game_systems.movePlayer(&world, input, client_id);
+                    },
+                }
                 game_systems.moveEnemies(&world);
             },
         }

@@ -13,10 +13,13 @@ pub const ClientId = packed struct {
     }
 };
 
-pub const ConnectionMessage = packed struct {};
+pub const ConnectionMessage = packed struct {
+    client_id: ClientId,
+};
 
 /// A message sent from the client to the server, with the current input state
 pub const InputMessage = packed struct {
+    client_id: ClientId,
     frame_number: i64,
     input: engine.Input,
 };
@@ -27,7 +30,6 @@ pub const MessageType = enum(u8) {
 };
 
 pub const Message = packed struct {
-    client_id: ClientId,
     type: MessageType,
     message: packed union {
         connection: ConnectionMessage,
@@ -35,7 +37,7 @@ pub const Message = packed struct {
     },
 
     pub fn sizeOf(self: *const @This()) u8 {
-        const prefix_size = @bitSizeOf(@TypeOf(self.client_id)) + @bitSizeOf(@TypeOf(self.type));
+        const prefix_size = @bitSizeOf(@TypeOf(self.type));
         const payload_size: u8 = switch (self.type) {
             .connection => @bitSizeOf(ConnectionMessage),
             .input => @bitSizeOf(InputMessage),
@@ -119,8 +121,9 @@ pub fn connectToServer(id: ClientId) !NetworkState {
         sockfd,
         &Message{
             .type = .connection,
-            .client_id = id,
-            .message = .{ .connection = ConnectionMessage{} },
+            .message = .{ .connection = ConnectionMessage{
+                .client_id = id,
+            } },
         },
     );
 
@@ -148,8 +151,8 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) 
         client.socket,
         &Message{
             .type = .input,
-            .client_id = client.id,
             .message = .{ .input = InputMessage{
+                .client_id = client.id,
                 .input = input,
                 .frame_number = frame_number,
             } },
@@ -157,13 +160,22 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) 
     );
 }
 
-pub fn receiveInput(server: *const Server) !engine.Input {
+pub fn hasInputWaiting(server: *const Server) !bool {
+    var fds = [_]posix.pollfd{.{
+        .fd = server.socket,
+        .events = posix.POLL.IN,
+        .revents = 0,
+    }};
+    return try posix.poll(&fds, 0) > 0;
+}
+
+pub fn receiveInput(server: *const Server) !InputMessage {
     while (true) {
         const message = try receiveMessage(server.socket);
 
         switch (message.type) {
             .input => {
-                return message.message.input.input;
+                return message.message.input;
             },
             .connection => continue,
         }

@@ -191,6 +191,7 @@ pub const World = struct {
     time: Time,
     screen_size: rl.Vector2,
     state: State,
+    input_map: [3]Input,
 };
 
 pub const Input = packed struct {
@@ -199,6 +200,15 @@ pub const Input = packed struct {
     down: bool,
     right: bool,
 
+    pub fn empty() Input {
+        return .{
+            .up = false,
+            .left = false,
+            .down = false,
+            .right = false,
+        };
+    }
+
     pub fn fromRaylib() Input {
         return .{
             .up = rl.isKeyDown(.up) or rl.isKeyDown(.w),
@@ -206,5 +216,22 @@ pub const Input = packed struct {
             .down = rl.isKeyDown(.down) or rl.isKeyDown(.s),
             .right = rl.isKeyDown(.right) or rl.isKeyDown(.d),
         };
+    }
+
+    pub fn getDirection(input: *const @This()) rl.Vector2 {
+        var direction = rl.Vector2.zero();
+        if (input.up) {
+            direction = direction.add(rl.Vector2.init(0, -1));
+        }
+        if (input.left) {
+            direction = direction.add(rl.Vector2.init(-1, 0));
+        }
+        if (input.down) {
+            direction = direction.add(rl.Vector2.init(0, 1));
+        }
+        if (input.right) {
+            direction = direction.add(rl.Vector2.init(1, 0));
+        }
+        return direction;
     }
 };

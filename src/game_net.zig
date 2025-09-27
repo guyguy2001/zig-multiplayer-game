@@ -27,7 +27,6 @@ pub const InputMessage = packed struct {
 
 pub const SnapshotPartMessage = packed struct {
     frame_number: i64,
-    client_id: ClientId,
     entity_diff: engine.EntityDiff,
 };
 
@@ -72,15 +71,30 @@ pub const NetworkRole = enum {
 
 pub const Server = struct {
     socket: posix.socket_t,
+    client_addresses: [3]?posix.sockaddr,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
+    }
+
+    pub fn onClientConnected(
+        self: *@This(),
+        client_address: posix.sockaddr,
+        client_id: ClientId,
+    ) !void {
+        if (client_id.value >= self.client_addresses.len) {
+            std.debug.print("Client connected with id {d}, which is out of range!", .{client_id.value});
+            return error.ConnectionMessageClientIdOutOfRange;
+        }
+        std.debug.print("Client {d} connected!\n", .{client_id.value});
+        self.client_addresses[client_id.value] = client_address;
     }
 };
 
 pub const Client = struct {
     id: ClientId,
     socket: posix.socket_t,
+    server_address: posix.sockaddr,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
@@ -103,33 +117,39 @@ pub const NetworkState = union(NetworkRole) {
     }
 };
 
-pub fn sendMessage(sock: posix.socket_t, message: *const Message) !void {
-    // The problem is that since we don't know what the type of the message is, we don't know its size either
-    // So we end up always sending the entire 16 bytes, even if we only have a Connection message, which isn't that long.
-    std.debug.print("Sizeof Message: {}\n", .{@sizeOf(Message)});
+pub fn sendMessage(sock: posix.socket_t, address: posix.sockaddr, message: *const Message) !void {
+    // std.debug.print("Sizeof Message: {}\n", .{@sizeOf(Message)});
     // std.debug.print("Sending {any}: \n", .{message.*});
     const ptr = @as([]const u8, @ptrCast(message))[0..message.sizeOf()];
-    std.debug.print("Sending (hex): ", .{});
-    for (ptr) |byte| {
-        std.debug.print("{x:0>2} ", .{byte}); // Prints each byte in hex, padded with leading zero if necessary
-    }
-    std.debug.print("\n", .{});
+    // std.debug.print("Sending (hex): ", .{});
+    // for (ptr) |byte| {
+    //     std.debug.print("{x:0>2} ", .{byte}); // Prints each byte in hex, padded with leading zero if necessary
+    // }
+    // std.debug.print("\n", .{});
 
-    _ = try posix.send(sock, ptr, 0);
+    _ = try posix.sendto(
+        sock,
+        ptr,
+        0,
+        &address,
+        @sizeOf(@TypeOf(address)),
+    );
 }
 
-pub fn receiveMessage(sock: posix.socket_t) !Message {
+fn receiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, Message } {
     var message: Message = undefined;
+    var address: posix.sockaddr = undefined;
+    var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
 
-    const len = try posix.recv(sock, @ptrCast(&message), 0);
+    const len = try posix.recvfrom(sock, @ptrCast(&message), 0, &address, &addrlen);
     // message = Message{ .client_id = .client_id(4), .message = .{ .connection = .{} }, .type = .connection };
     // const len = 2;
-    std.debug.print("Received (hex): ", .{});
-    for (@as([]u8, @ptrCast(&message))[0..len]) |byte| {
-        std.debug.print("{x:0>2} ", .{byte}); // Prints each byte in hex, padded with leading zero if necessary
-    }
-    std.debug.print("\n", .{});
-    std.debug.print("Got {d} bytes, out of {d}\n", .{ len, @sizeOf(Message) });
+    // std.debug.print("Received (hex): ", .{});
+    // for (@as([]u8, @ptrCast(&message))[0..len]) |byte| {
+    //     std.debug.print("{x:0>2} ", .{byte}); // Prints each byte in hex, padded with leading zero if necessary
+    // }
+    // std.debug.print("\n", .{});
+    // std.debug.print("Got {d} bytes, out of {d}\n", .{ len, @sizeOf(Message) });
     if (len < 2) {
         @panic("AAHHHHHHHHHHH");
     }
@@ -137,16 +157,17 @@ pub fn receiveMessage(sock: posix.socket_t) !Message {
         @panic("AHH2");
     }
     // TODO: assert received len == sizeof
-    return message;
+    return .{ address, message };
 }
 
 pub fn connectToServer(id: ClientId) !NetworkState {
-    const sockfd = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM | posix.SOCK.CLOEXEC, 0);
-    errdefer posix.close(sockfd);
+    const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM | posix.SOCK.CLOEXEC, 0);
+    errdefer posix.close(socket);
 
-    try posix.connect(sockfd, &server_address.any, server_address.getOsSockLen());
+    try posix.connect(socket, &server_address.any, server_address.getOsSockLen());
     try sendMessage(
-        sockfd,
+        socket,
+        server_address.any,
         &Message{
             .type = .connection,
             .message = .{ .connection = ConnectionMessage{
@@ -155,13 +176,14 @@ pub fn connectToServer(id: ClientId) !NetworkState {
         },
     );
 
-    return NetworkState{ .client = .{
-        .socket = sockfd,
+    return NetworkState{ .client = Client{
+        .socket = socket,
+        .server_address = server_address.any,
         .id = id,
     } };
 }
 
-pub fn waitForConnection() !NetworkState {
+pub fn setupServer() !NetworkState {
     const sock = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(sock);
 
@@ -169,14 +191,16 @@ pub fn waitForConnection() !NetworkState {
 
     std.debug.print("UDP Server listening on port {d}\n", .{port});
 
-    const message = receiveMessage(sock);
-    std.debug.print("Got stuff in my buffer {any}", .{message});
-    return NetworkState{ .server = .{ .socket = sock } };
+    return NetworkState{ .server = Server{
+        .socket = sock,
+        .client_addresses = .{null} ** 3,
+    } };
 }
 
 pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) !void {
     try sendMessage(
         client.socket,
+        client.server_address,
         &Message{
             .type = .input,
             .message = .{ .input = InputMessage{
@@ -188,15 +212,18 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) 
     );
 }
 
-pub fn receiveInput(server: *const Server) !InputMessage {
+pub fn receiveInput(server: *Server) !InputMessage {
     while (true) {
-        const message = try receiveMessage(server.socket);
+        const address, const message = try receiveMessage(server.socket);
 
         switch (message.type) {
             .input => {
                 return message.message.input;
             },
-            .connection => continue,
+            .connection => {
+                try server.onClientConnected(address, message.message.connection.client_id);
+                continue;
+            },
             .snapshot_part => unreachable,
         }
     }
@@ -204,7 +231,7 @@ pub fn receiveInput(server: *const Server) !InputMessage {
 
 pub fn receiveSnapshotPart(client: *const Client) !InputMessage {
     while (true) {
-        const message = try receiveMessage(client.socket);
+        _, const message = try receiveMessage(client.socket);
 
         switch (message.type) {
             .input => unreachable,
@@ -234,3 +261,24 @@ pub fn receiveSnapshotPart(client: *const Client) !InputMessage {
 //         }
 //     }
 // }
+
+pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
+    var iter = world.entities.iter();
+    while (iter.next()) |entity| {
+        if (world.entities.modified_this_frame[entity.id.index]) {
+            std.debug.print("Sending snapshot of entity {}\n", .{entity.id});
+            const message = Message{
+                .type = .snapshot_part,
+                .message = .{ .snapshot_part = SnapshotPartMessage{
+                    .entity_diff = entity.make_diff(),
+                    .frame_number = world.time.frame_number,
+                } },
+            };
+            for (server.client_addresses) |c| {
+                if (c) |address| {
+                    try sendMessage(server.socket, address, &message);
+                }
+            }
+        }
+    }
+}

@@ -24,12 +24,14 @@ pub fn serverMovePlayers(world: *engine.World) void {
     var iter = world.entities.iter();
     while (iter.next()) |e| {
         if (e.tag == .player) {
-            const player = world.entities.get_mut(e.id);
-            const magnitude = world.time.deltaSecs() * player.speed;
-            player.position = player.position.add(
-                world.input_map[player.network.?.owner_id.value]
-                    .getDirection().normalize().scale(magnitude),
-            );
+            const direction = world.input_map[e.network.?.owner_id.value].getDirection();
+            if (direction.x != 0 or direction.y != 0) {
+                const player = world.entities.get_mut(e.id);
+                const magnitude = world.time.deltaSecs() * player.speed;
+                player.position = player.position.add(
+                    direction.normalize().scale(magnitude),
+                );
+            }
         }
     }
 }

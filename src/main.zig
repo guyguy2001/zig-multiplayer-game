@@ -63,7 +63,7 @@ pub fn main() anyerror!void {
     spawnGame(&world);
     var network: game_net.NetworkState =
         (if (config.is_server)
-            try game_net.waitForConnection()
+            try game_net.setupServer()
         else
             try game_net.connectToServer(client_id));
 
@@ -81,17 +81,18 @@ pub fn main() anyerror!void {
             .game => {
                 world.time.update();
                 switch (network) {
-                    .server => |s| {
+                    .server => |*s| {
                         while (try s.hasMessageWaiting()) {
-                            const message = try game_net.receiveInput(&s);
+                            const message = try game_net.receiveInput(s);
                             world.input_map[message.client_id.value] = message.input;
                         }
                         game_systems.serverMovePlayers(&world);
+                        try game_net.sendSnapshots(s, &world);
                     },
 
                     .client => |c| {
                         const input = engine.Input.fromRaylib();
-                        while (try c.hasMessageWaiting()) {}
+                        // while (try c.hasMessageWaiting()) {}
                         try game_net.sendInput(&c, input, world.time.frame_number);
                         game_systems.movePlayer(&world, input, client_id);
                     },
@@ -145,6 +146,11 @@ pub fn main() anyerror!void {
             rl.drawText(slice, 0, 32, 32, .black);
         }
         // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
+        //----------------------------------------------------------------------------------
+
+        // Cleanup
+        //----------------------------------------------------------------------------------
+        world.entities.modified_this_frame = .{false} ** world.entities.modified_this_frame.len;
         //----------------------------------------------------------------------------------
     }
     try network.cleanup();

@@ -1,5 +1,6 @@
 const engine = @import("engine.zig");
 const std = @import("std");
+const utils = @import("utils.zig");
 const posix = std.posix;
 
 const port = 12348;
@@ -19,14 +20,21 @@ pub const ConnectionMessage = packed struct {
 
 /// A message sent from the client to the server, with the current input state
 pub const InputMessage = packed struct {
-    client_id: ClientId,
     frame_number: i64,
+    client_id: ClientId,
     input: engine.Input,
+};
+
+pub const SnapshotPartMessage = packed struct {
+    frame_number: i64,
+    client_id: ClientId,
+    entity_diff: engine.EntityDiff,
 };
 
 pub const MessageType = enum(u8) {
     connection = 5,
     input = 6,
+    snapshot_part = 7,
 };
 
 pub const Message = packed struct {
@@ -34,17 +42,28 @@ pub const Message = packed struct {
     message: packed union {
         connection: ConnectionMessage,
         input: InputMessage,
+        snapshot_part: SnapshotPartMessage,
     },
 
-    pub fn sizeOf(self: *const @This()) u8 {
+    pub fn sizeOf(self: *const @This()) usize {
         const prefix_size = @bitSizeOf(@TypeOf(self.type));
-        const payload_size: u8 = switch (self.type) {
+        const payload_size: usize = switch (self.type) {
             .connection => @bitSizeOf(ConnectionMessage),
             .input => @bitSizeOf(InputMessage),
+            .snapshot_part => @bitSizeOf(SnapshotPartMessage),
         };
         return (prefix_size + payload_size + 7) / 8;
     }
 };
+
+pub fn _hasMessageWaiting(socket: posix.socket_t) !bool {
+    var fds = [_]posix.pollfd{.{
+        .fd = socket,
+        .events = posix.POLL.IN,
+        .revents = 0,
+    }};
+    return try posix.poll(&fds, 0) > 0;
+}
 
 pub const NetworkRole = enum {
     client,
@@ -53,10 +72,19 @@ pub const NetworkRole = enum {
 
 pub const Server = struct {
     socket: posix.socket_t,
+
+    pub fn hasMessageWaiting(self: *const @This()) !bool {
+        return _hasMessageWaiting(self.socket);
+    }
 };
+
 pub const Client = struct {
     id: ClientId,
     socket: posix.socket_t,
+
+    pub fn hasMessageWaiting(self: *const @This()) !bool {
+        return _hasMessageWaiting(self.socket);
+    }
 };
 
 pub const NetworkState = union(NetworkRole) {
@@ -160,15 +188,6 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) 
     );
 }
 
-pub fn hasInputWaiting(server: *const Server) !bool {
-    var fds = [_]posix.pollfd{.{
-        .fd = server.socket,
-        .events = posix.POLL.IN,
-        .revents = 0,
-    }};
-    return try posix.poll(&fds, 0) > 0;
-}
-
 pub fn receiveInput(server: *const Server) !InputMessage {
     while (true) {
         const message = try receiveMessage(server.socket);
@@ -178,6 +197,19 @@ pub fn receiveInput(server: *const Server) !InputMessage {
                 return message.message.input;
             },
             .connection => continue,
+            .snapshot_part => unreachable,
+        }
+    }
+}
+
+pub fn receiveSnapshotPart(client: *const Client) !InputMessage {
+    while (true) {
+        const message = try receiveMessage(client.socket);
+
+        switch (message.type) {
+            .input => unreachable,
+            .connection => continue,
+            .snapshot_part => return message.message.snapshot_part,
         }
     }
 }

@@ -46,6 +46,7 @@ pub fn main() anyerror!void {
         .entities = engine.EntityList{
             .entities = undefined,
             .is_alive = [_]bool{false} ** 100,
+            .modified_this_frame = [_]bool{false} ** 100,
             .next_id = 0x00,
         },
         .time = engine.Time.init(1000 / fps),
@@ -81,7 +82,7 @@ pub fn main() anyerror!void {
                 world.time.update();
                 switch (network) {
                     .server => |s| {
-                        while (try game_net.hasInputWaiting(&s)) {
+                        while (try s.hasMessageWaiting()) {
                             const message = try game_net.receiveInput(&s);
                             world.input_map[message.client_id.value] = message.input;
                         }
@@ -90,6 +91,7 @@ pub fn main() anyerror!void {
 
                     .client => |c| {
                         const input = engine.Input.fromRaylib();
+                        while (try c.hasMessageWaiting()) {}
                         try game_net.sendInput(&c, input, world.time.frame_number);
                         game_systems.movePlayer(&world, input, client_id);
                     },
@@ -170,10 +172,12 @@ fn hideMenu(world: *engine.World) void {
     var iter = world.entities.iter();
     while (iter.next()) |ent| {
         if (ent.tag == .ui) {
-            ent.visible = false;
+            const ui_node = world.entities.get_mut(ent.id);
+            ui_node.visible = false;
         }
     }
 }
+
 fn spawnGame(world: *engine.World) void {
     world.time.reset();
     const screen_size = world.screen_size;

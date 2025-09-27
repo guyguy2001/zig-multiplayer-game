@@ -30,11 +30,15 @@ const Render = union(RenderTag) {
     },
 };
 
-pub const Id = struct {
+pub const Id = packed struct {
     generation: usize,
     index: usize,
 
     pub const invalid = Id{ .generation = 0xffff, .index = 0xffff };
+
+    pub fn equals(self: *@This(), other: *@This()) bool {
+        return self.generation == other.generation and self.index == other.index;
+    }
 };
 
 pub const Timer = struct {
@@ -80,7 +84,7 @@ pub const Entity = struct {
     visible: bool = true,
 
     // TODO: Switch from ClientId to NetowrkIdentity (which is either Server{} or Client{id: u8?})
-    pub fn isSimulatedLocally(self: *@This(), client_id: game_net.ClientId) bool {
+    pub fn isSimulatedLocally(self: *const @This(), client_id: game_net.ClientId) bool {
         if (self.network) |net| {
             return net.owner_id.value == client_id.value;
         } else {
@@ -88,6 +92,29 @@ pub const Entity = struct {
             return true;
         }
     }
+
+    pub fn make_diff(self: *const @This()) EntityDiff {
+        return .{
+            .id = self.id,
+            .position = .{
+                .x = self.position.x,
+                .y = self.position.y,
+            },
+        };
+    }
+
+    pub fn apply_diff(self: *@This(), diff: EntityDiff) !void {
+        if (!self.id.equals(diff.id)) return error.DiffHasWrongId;
+        self.position = rl.Vector2.init(diff.position.x, self.position.y);
+    }
+};
+
+pub const EntityDiff = packed struct {
+    id: Id,
+    position: packed struct {
+        x: f32,
+        y: f32,
+    },
 };
 
 const EntitiesAccessError = error{
@@ -99,6 +126,7 @@ const EntitiesAccessError = error{
 pub const EntityList = struct {
     entities: [100]Entity,
     is_alive: [100]bool,
+    modified_this_frame: [100]bool,
     next_id: usize,
 
     pub fn spawn(self: *@This(), engine: Entity) Id {
@@ -113,13 +141,24 @@ pub const EntityList = struct {
         return ent.id;
     }
 
-    pub fn get(self: *@This(), id: Id) EntitiesAccessError!*Entity {
+    pub fn get(self: *const @This(), id: Id) EntitiesAccessError!*const Entity {
         if (id.index >= self.next_id) {
             return EntitiesAccessError.IndexTooBig;
         }
         if (!self.is_alive[id.index]) {
             return EntitiesAccessError.EntityNotAlive;
         }
+        return &self.entities[id.index];
+    }
+
+    pub fn get_mut(self: *@This(), id: Id) *Entity {
+        if (id.index >= self.next_id) {
+            @panic("IndexTooBig");
+        }
+        if (!self.is_alive[id.index]) {
+            @panic("EntityNotAlive");
+        }
+        self.modified_this_frame[id.index] = true;
         return &self.entities[id.index];
     }
 
@@ -134,7 +173,7 @@ pub const EntityList = struct {
 pub const EntitiesIterator = struct {
     list: *EntityList,
     index: usize,
-    pub fn next(self: *@This()) ?*Entity {
+    pub fn next(self: *@This()) ?*const Entity {
         for (self.index..self.list.next_id) |i| {
             if (self.list.is_alive[i]) {
                 self.index = i + 1;

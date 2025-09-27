@@ -11,8 +11,9 @@ pub fn movePlayer(world: *engine.World, input: engine.Input, client_id: game_net
     // If we're in problem - wait?????
 
     var iter = world.entities.iter();
-    while (iter.next()) |player| {
-        if (player.tag == .player and player.isSimulatedLocally(client_id)) {
+    while (iter.next()) |e| {
+        if (e.tag == .player and e.isSimulatedLocally(client_id)) {
+            const player = world.entities.get_mut(e.id);
             const magnitude = world.time.deltaSecs() * player.speed;
             player.position = player.position.add(direction.normalize().scale(magnitude));
         }
@@ -21,8 +22,9 @@ pub fn movePlayer(world: *engine.World, input: engine.Input, client_id: game_net
 
 pub fn serverMovePlayers(world: *engine.World) void {
     var iter = world.entities.iter();
-    while (iter.next()) |player| {
-        if (player.tag == .player) {
+    while (iter.next()) |e| {
+        if (e.tag == .player) {
+            const player = world.entities.get_mut(e.id);
             const magnitude = world.time.deltaSecs() * player.speed;
             player.position = player.position.add(
                 world.input_map[player.network.?.owner_id.value]
@@ -36,11 +38,12 @@ pub fn moveEnemies(world: *engine.World) void {
     var iter = world.entities.iter();
     while (iter.next()) |ent| {
         if (ent.tag == .enemy) {
-            const direction = if (ent.direction) rl.Vector2.init(0, 1) else rl.Vector2.init(0, -1);
-            ent.position = ent.position.add(direction.scale(world.time.deltaSecs() * ent.speed));
-            ent.timer.update(&world.time);
-            if (ent.timer.just_finished) {
-                ent.direction = !ent.direction;
+            const enemy = world.entities.get_mut(ent.id);
+            const direction = if (enemy.direction) rl.Vector2.init(0, 1) else rl.Vector2.init(0, -1);
+            enemy.position = enemy.position.add(direction.scale(world.time.deltaSecs() * enemy.speed));
+            enemy.timer.update(&world.time);
+            if (enemy.timer.just_finished) {
+                enemy.direction = !enemy.direction;
             }
         }
     }

@@ -10,6 +10,43 @@
         "kind": "build",
         "isDefault": true
       }
+    },
+    {
+      "label": "Zig Watch All",
+      "dependsOn": ["Zig Watch 1", "Zig Watch 2", "Zig Watch 3"],
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    },
+    {
+      "label": "Zig Watch 1",
+      "type": "shell",
+      "command": "zig build watch",
+      "presentation": {
+        "panel": "dedicated",
+        "group": "zig",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Zig Watch 2",
+      "type": "shell",
+      "command": "zig build watch",
+      "presentation": {
+        "panel": "dedicated",
+        "group": "zig",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "Zig Watch 3",
+      "type": "shell",
+      "command": "zig build watch",
+      "presentation": {
+        "panel": "dedicated",
+        "group": "zig",
+        "reveal": "always"
+      }
     }
   ]
 }

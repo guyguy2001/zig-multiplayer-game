@@ -66,6 +66,9 @@ pub fn main() anyerror!void {
             try game_net.setupServer()
         else
             try game_net.connectToServer(client_id));
+    if (!config.is_server) {
+        std.Thread.sleep(3_000_000);
+    }
 
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
@@ -92,7 +95,11 @@ pub fn main() anyerror!void {
 
                     .client => |c| {
                         const input = engine.Input.fromRaylib();
-                        // while (try c.hasMessageWaiting()) {}
+                        while (try c.hasMessageWaiting()) {
+                            const part = try game_net.receiveSnapshotPart(&c);
+                            // TODO: get_mut panics on wrong id, so probably a bad idea?
+                            try world.entities.get_mut(part.entity_diff.id).apply_diff(part.entity_diff);
+                        }
                         try game_net.sendInput(&c, input, world.time.frame_number);
                         game_systems.movePlayer(&world, input, client_id);
                     },

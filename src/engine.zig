@@ -36,7 +36,7 @@ pub const Id = packed struct {
 
     pub const invalid = Id{ .generation = 0xffff, .index = 0xffff };
 
-    pub fn equals(self: *@This(), other: *@This()) bool {
+    pub fn equals(self: @This(), other: @This()) bool {
         return self.generation == other.generation and self.index == other.index;
     }
 };
@@ -105,7 +105,7 @@ pub const Entity = struct {
 
     pub fn apply_diff(self: *@This(), diff: EntityDiff) !void {
         if (!self.id.equals(diff.id)) return error.DiffHasWrongId;
-        self.position = rl.Vector2.init(diff.position.x, self.position.y);
+        self.position = rl.Vector2.init(diff.position.x, diff.position.y);
     }
 };
 

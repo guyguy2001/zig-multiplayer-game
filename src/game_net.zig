@@ -229,8 +229,9 @@ pub fn receiveInput(server: *Server) !InputMessage {
     }
 }
 
-pub fn receiveSnapshotPart(client: *const Client) !InputMessage {
+pub fn receiveSnapshotPart(client: *const Client) !SnapshotPartMessage {
     while (true) {
+        // problem is probably that it notices the server sent an ICMP packet of "not yet"
         _, const message = try receiveMessage(client.socket);
 
         switch (message.type) {
@@ -266,7 +267,6 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     var iter = world.entities.iter();
     while (iter.next()) |entity| {
         if (world.entities.modified_this_frame[entity.id.index]) {
-            std.debug.print("Sending snapshot of entity {}\n", .{entity.id});
             const message = Message{
                 .type = .snapshot_part,
                 .message = .{ .snapshot_part = SnapshotPartMessage{

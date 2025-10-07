@@ -35,3 +35,106 @@ pub fn to_unpacked(T: type, source: pack_type(T)) T {
     }
     return result;
 }
+
+pub fn MockCyclicBuffer(comptime T: type, comptime empty_value: T) type {
+    return struct {
+        const Self = @This();
+
+        const Block = struct {
+            node: std.DoublyLinkedList.Node,
+            data: T,
+        };
+
+        // invariant: "buff.last.frame" == first_frame + buff.length - 1
+        allocator: std.mem.Allocator,
+        list: std.DoublyLinkedList,
+        first_frame: usize,
+        len: usize,
+
+        pub fn init(gpa: std.mem.Allocator) Self {
+            return Self{
+                .allocator = gpa,
+                .list = .{},
+                .first_frame = 0,
+                .len = 0,
+            };
+        }
+
+        pub fn extend(self: *Self, frame: usize) !void {
+            while (self.first_frame + self.len <= frame) {
+                const block = try self.allocator.create(Block);
+                block.* = .{
+                    .data = empty_value,
+                    .node = .{},
+                };
+                self.list.append(&block.node);
+                self.len += 1;
+            }
+        }
+
+        pub fn at(self: *Self, frame: usize) !*T {
+            try self.extend(frame);
+            var f = self.first_frame;
+            var curr = self.list.first.?;
+            if (frame - f > 2000) {
+                return error.InvalidFrameAccess;
+            }
+            while (f < frame) {
+                f += 1;
+                curr = curr.next.?;
+            }
+
+            const block: *Block = @fieldParentPtr("node", curr);
+            return &block.data;
+        }
+
+        fn freeNode(self: Self, node: *std.DoublyLinkedList.Node) void {
+            const block: *Block = @fieldParentPtr("node", node);
+            self.allocator.destroy(block);
+        }
+
+        pub fn dropFrame(self: *Self, frame: usize) !void {
+            if (frame != self.first_frame) {
+                return error.TriedToDropWrongFrame;
+            }
+            const first = self.list.first.?;
+            _ = self.list.popFirst();
+            self.freeNode(first);
+            self.len -= 1;
+        }
+
+        pub fn deinit(self: *Self) void {
+            while (self.list.pop()) |node| {
+                self.freeNode(node);
+            }
+        }
+    };
+}
+
+test "cyclic buffer" {
+    const expect = std.testing.expect;
+    _ = expect; // autofix
+    const expectEqual = std.testing.expectEqual;
+
+    var cyclic_buffer = MockCyclicBuffer(u8, 0).init(std.testing.allocator);
+    defer cyclic_buffer.deinit();
+    try expectEqual(0, cyclic_buffer.len);
+    const at3 = try cyclic_buffer.at(3);
+    try expectEqual(0, at3.*);
+    at3.* = 2;
+    try expectEqual(2, at3.*);
+    try expectEqual(4, cyclic_buffer.len);
+    try expectEqual(0, (try cyclic_buffer.at(0)).*);
+    try expectEqual(4, cyclic_buffer.len);
+    try expectEqual(0, (try cyclic_buffer.at(1)).*);
+    try expectEqual(4, cyclic_buffer.len);
+    try expectEqual(0, (try cyclic_buffer.at(2)).*);
+    try expectEqual(4, cyclic_buffer.len);
+
+    try cyclic_buffer.dropFrame(0);
+    try expectEqual(3, cyclic_buffer.len);
+    try expectEqual(0, (try cyclic_buffer.at(0)).*);
+    try expectEqual(0, (try cyclic_buffer.at(1)).*);
+    try expectEqual(2, (try cyclic_buffer.at(2)).*);
+    try expectEqual(3, cyclic_buffer.len);
+}

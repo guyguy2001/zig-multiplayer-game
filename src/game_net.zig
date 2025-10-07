@@ -242,27 +242,6 @@ pub fn receiveSnapshotPart(client: *const Client) !SnapshotPartMessage {
     }
 }
 
-// pub fn receiveMessage3(sock: posix.socket_t, message_pool: [1]Message) !Message {
-//     _ = try posix.recv(sock, @ptrCast(&message_pool), 0);
-//     // TODO: assert received len == sizeof
-//     return message_pool[0];
-// }
-
-// pub fn receiveInput3(server: *const Server) !engine.Input {
-//     while (true) {
-//         var pool: [1]Message = undefined;
-
-//         const message = try receiveMessage(server.socket, &pool);
-
-//         switch (message) {
-//             .input => {
-//                 return message.message.input.input;
-//             },
-//             .connection => continue,
-//         }
-//     }
-// }
-
 pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     var iter = world.entities.iter();
     while (iter.next()) |entity| {

@@ -1,51 +1,65 @@
 {
   "version": "2.0.0",
   "tasks": [
+    // --- Build ---
     {
-      "label": "build",
+      "label": "Zig: Build",
       "type": "shell",
       "command": "zig build",
-      "problemMatcher": [],
       "group": {
         "kind": "build",
         "isDefault": true
-      }
+      },
+      "problemMatcher": ["$zig"],
+      "detail": "Build the Zig project"
     },
+
+    // --- Master task: runs all in parallel ---
     {
-      "label": "Zig Watch All",
-      "dependsOn": ["Zig Watch 1", "Zig Watch 2", "Zig Watch 3"],
-      "runOptions": {
-        "runOn": "folderOpen"
-      }
+      "label": "Run Game (server + 2 clients)",
+      "dependsOn": ["Run Server", "Run Client 1", "Run Client 2"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": "none"
     },
+
+    // --- Server ---
     {
-      "label": "Zig Watch 1",
+      "label": "Run Server",
       "type": "shell",
-      "command": "zig build watch",
-      "presentation": {
-        "panel": "dedicated",
-        "group": "zig",
-        "reveal": "always"
-      }
+      "command": "${workspaceFolder}/zig-out/bin/${workspaceFolderBasename}.exe --server",
+      "dependsOn": ["Zig: Build"],
+      "problemMatcher": [],
+      "presentation": { "panel": "new" }
     },
+
+    // --- Client 1 ---
     {
-      "label": "Zig Watch 2",
+      "label": "Run Client 1",
       "type": "shell",
-      "command": "zig build watch",
-      "presentation": {
-        "panel": "dedicated",
-        "group": "zig",
-        "reveal": "always"
-      }
+      "command": "${workspaceFolder}/zig-out/bin/${workspaceFolderBasename}.exe --client-id 1",
+      "dependsOn": ["Zig: Build"],
+      "problemMatcher": [],
+      "presentation": { "panel": "new" }
     },
+
+    // --- Client 2 ---
     {
-      "label": "Zig Watch 3",
+      "label": "Run Client 2",
       "type": "shell",
-      "command": "zig build watch",
-      "presentation": {
-        "panel": "dedicated",
-        "group": "zig",
-        "reveal": "always"
+      "command": "${workspaceFolder}/zig-out/bin/${workspaceFolderBasename}.exe --client-id 2",
+      "dependsOn": ["Zig: Build"],
+      "problemMatcher": [],
+      "presentation": { "panel": "new" }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "zig-multiplatform-exe",
+      "type": "command",
+      "command": "workbench.action.terminal.sendSequence",
+      "args": {
+        "text": ""
       }
     }
   ]

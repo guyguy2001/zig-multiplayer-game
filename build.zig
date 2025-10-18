@@ -59,7 +59,8 @@ pub fn build(b: *std.Build) void {
     // If neither case applies to you, feel free to delete the declaration you
     // don't need and to put everything under a single module.
     const exe = b.addExecutable(.{
-        .name = if (server) "zig_multiplayer_game_server" else "zig_multiplayer_game_client",
+        // .name = if (server) "zig_multiplayer_game_server" else "zig_multiplayer_game_client",
+        .name = "zig_multiplayer_game",
         .root_module = b.createModule(.{
             // b.createModule defines a new module just like b.addModule but,
             // unlike b.addModule, it does not expose the module to consumers of

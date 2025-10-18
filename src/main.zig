@@ -1,10 +1,12 @@
+const argsParser = @import("args");
+// const config = @import("config");
 const std = @import("std");
 const rl = @import("raylib");
+
 const engine = @import("engine.zig");
 const game_systems = @import("game_systems.zig");
 const game_net = @import("game_net.zig");
-const config = @import("config");
-const argsParser = @import("args");
+const server = @import("server.zig");
 
 pub fn main() anyerror!void {
     std.debug.print("Foo: {}\n", .{@sizeOf(game_net.Message)});
@@ -14,13 +16,15 @@ pub fn main() anyerror!void {
     const options = argsParser.parseForCurrentProcess(struct {
         // This declares long options for double hyphen
         @"client-id": u4 = 0,
+        server: bool = false,
     }, argsAllocator, .print) catch return;
     defer options.deinit();
 
     const client_id = game_net.ClientId{ .value = options.options.@"client-id" };
+    const is_server = options.options.server;
 
-    std.debug.print("is server: {}\n", .{config.is_server});
-    if (!config.is_server) {
+    std.debug.print("is server!: {}\n", .{is_server});
+    if (!is_server) {
         std.debug.print("client id: {}\n", .{client_id});
     }
 
@@ -30,7 +34,7 @@ pub fn main() anyerror!void {
 
     rl.setTraceLogLevel(.none);
     rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
-    if (!config.is_server) {
+    if (!is_server) {
         switch (client_id.value) {
             1 => rl.setWindowPosition(0, 0),
             2 => rl.setWindowPosition(screenWidth, 0),
@@ -39,7 +43,6 @@ pub fn main() anyerror!void {
     }
     defer rl.closeWindow(); // Close window and OpenGL context
 
-    rl.setTargetFPS(50); // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
     var world = engine.World{
@@ -55,18 +58,18 @@ pub fn main() anyerror!void {
         .input_map = [_]engine.Input{.empty()} ** 3,
     };
 
-    rl.setTargetFPS(60);
+    rl.setTargetFPS(120);
 
     // TODO: add a menu back to the game, maybe allow via build/commandline options to skip it
     world.state = .game;
     hideMenu(&world);
     spawnGame(&world);
     var network: game_net.NetworkState =
-        (if (config.is_server)
-            try game_net.setupServer()
+        (if (is_server)
+            try game_net.setupServer(std.heap.c_allocator)
         else
             try game_net.connectToServer(client_id));
-    if (!config.is_server) {
+    if (!is_server) {
         std.Thread.sleep(3_000_000);
     }
 
@@ -76,6 +79,10 @@ pub fn main() anyerror!void {
         //----------------------------------------------------------------------------------
         // TODO: Update your variables here
         //----------------------------------------------------------------------------------
+        if (world.time.getDrift() < 0) {
+            const to_sleep: u64 = @intFromFloat(world.time.getDrift() * -1 * @as(f32, @floatFromInt(world.time.time_per_frame)) * 1_000_000);
+            std.Thread.sleep(to_sleep);
+        }
 
         switch (world.state) {
             .menu => {
@@ -88,6 +95,7 @@ pub fn main() anyerror!void {
                         while (try s.hasMessageWaiting()) {
                             const message = try game_net.receiveInput(s);
                             world.input_map[message.client_id.value] = message.input;
+                            try s.input.onInputReceived(message);
                         }
                         game_systems.serverMovePlayers(&world);
                         try game_net.sendSnapshots(s, &world);
@@ -148,9 +156,16 @@ pub fn main() anyerror!void {
 
         if (world.state == .game) {
             rl.drawFPS(0, 0);
-            var b = [_]u8{0} ** 20;
-            const slice = try std.fmt.bufPrintZ(&b, "-{d}", .{world.time.getDrift()});
-            rl.drawText(slice, 0, 32, 32, .black);
+            {
+                var b = [_]u8{0} ** 20;
+                const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.getDrift()});
+                rl.drawText(slice, 0, 32, 32, .black);
+            }
+            {
+                var b = [_]u8{0} ** 20;
+                const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.frame_number});
+                rl.drawText(slice, 0, 64, 32, .black);
+            }
         }
         // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
         //----------------------------------------------------------------------------------

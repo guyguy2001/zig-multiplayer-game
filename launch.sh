@@ -1,4 +1,4 @@
-zig build run -Dserver &
+zig build run -- --server &
 pid1=$!
 zig build run -- --client-id 1 &
 pid2=$!

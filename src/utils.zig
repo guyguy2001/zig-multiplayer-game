@@ -48,19 +48,19 @@ pub fn MockCyclicBuffer(comptime T: type, comptime empty_value: T) type {
         // invariant: "buff.last.frame" == first_frame + buff.length - 1
         allocator: std.mem.Allocator,
         list: std.DoublyLinkedList,
-        first_frame: usize,
-        len: usize,
+        first_frame: i64,
+        len: i64,
 
         pub fn init(gpa: std.mem.Allocator) Self {
             return Self{
                 .allocator = gpa,
                 .list = .{},
-                .first_frame = 0,
+                .first_frame = 1,
                 .len = 0,
             };
         }
 
-        pub fn extend(self: *Self, frame: usize) !void {
+        pub fn extend(self: *Self, frame: i64) !void {
             while (self.first_frame + self.len <= frame) {
                 const block = try self.allocator.create(Block);
                 block.* = .{
@@ -72,7 +72,7 @@ pub fn MockCyclicBuffer(comptime T: type, comptime empty_value: T) type {
             }
         }
 
-        pub fn at(self: *Self, frame: usize) !*T {
+        pub fn at(self: *Self, frame: i64) !*T {
             try self.extend(frame);
             var f = self.first_frame;
             var curr = self.list.first.?;
@@ -93,7 +93,7 @@ pub fn MockCyclicBuffer(comptime T: type, comptime empty_value: T) type {
             self.allocator.destroy(block);
         }
 
-        pub fn dropFrame(self: *Self, frame: usize) !void {
+        pub fn dropFrame(self: *Self, frame: i64) !void {
             if (frame != self.first_frame) {
                 return error.TriedToDropWrongFrame;
             }
@@ -101,6 +101,7 @@ pub fn MockCyclicBuffer(comptime T: type, comptime empty_value: T) type {
             _ = self.list.popFirst();
             self.freeNode(first);
             self.len -= 1;
+            self.first_frame += 1;
         }
 
         pub fn deinit(self: *Self) void {
@@ -119,22 +120,24 @@ test "cyclic buffer" {
     var cyclic_buffer = MockCyclicBuffer(u8, 0).init(std.testing.allocator);
     defer cyclic_buffer.deinit();
     try expectEqual(0, cyclic_buffer.len);
-    const at3 = try cyclic_buffer.at(3);
-    try expectEqual(0, at3.*);
-    at3.* = 2;
-    try expectEqual(2, at3.*);
-    try expectEqual(4, cyclic_buffer.len);
-    try expectEqual(0, (try cyclic_buffer.at(0)).*);
+    const at4 = try cyclic_buffer.at(4);
+    try expectEqual(0, at4.*);
+    at4.* = 2;
+    try expectEqual(2, at4.*);
     try expectEqual(4, cyclic_buffer.len);
     try expectEqual(0, (try cyclic_buffer.at(1)).*);
     try expectEqual(4, cyclic_buffer.len);
     try expectEqual(0, (try cyclic_buffer.at(2)).*);
     try expectEqual(4, cyclic_buffer.len);
+    try expectEqual(0, (try cyclic_buffer.at(3)).*);
+    try expectEqual(4, cyclic_buffer.len);
+    try expectEqual(1, cyclic_buffer.first_frame);
 
-    try cyclic_buffer.dropFrame(0);
+    try cyclic_buffer.dropFrame(1);
     try expectEqual(3, cyclic_buffer.len);
-    try expectEqual(0, (try cyclic_buffer.at(0)).*);
-    try expectEqual(0, (try cyclic_buffer.at(1)).*);
-    try expectEqual(2, (try cyclic_buffer.at(2)).*);
+    try expectEqual(0, (try cyclic_buffer.at(2)).*);
+    try expectEqual(0, (try cyclic_buffer.at(3)).*);
+    try expectEqual(2, (try cyclic_buffer.at(4)).*);
     try expectEqual(3, cyclic_buffer.len);
+    try expectEqual(2, cyclic_buffer.first_frame);
 }

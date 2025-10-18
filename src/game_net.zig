@@ -1,5 +1,6 @@
-const engine = @import("engine.zig");
 const std = @import("std");
+const engine = @import("engine.zig");
+const server_structs = @import("server.zig");
 const utils = @import("utils.zig");
 const posix = std.posix;
 
@@ -72,6 +73,8 @@ pub const NetworkRole = enum {
 pub const Server = struct {
     socket: posix.socket_t,
     client_addresses: [3]?posix.sockaddr,
+    // TODO: Is it a good idea for this to also contain gameplay-logic-structs such as these?
+    input: server_structs.InputBuffer,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
@@ -183,7 +186,7 @@ pub fn connectToServer(id: ClientId) !NetworkState {
     } };
 }
 
-pub fn setupServer() !NetworkState {
+pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
     const sock = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(sock);
 
@@ -194,6 +197,7 @@ pub fn setupServer() !NetworkState {
     return NetworkState{ .server = Server{
         .socket = sock,
         .client_addresses = .{null} ** 3,
+        .input = .init(gpa),
     } };
 }
 

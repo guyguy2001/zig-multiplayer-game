@@ -73,6 +73,7 @@ pub fn main() anyerror!void {
         std.Thread.sleep(3_000_000);
     }
 
+    var server_frame: i64 = 0;
     // Main game loop
     while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // Update
@@ -92,83 +93,47 @@ pub fn main() anyerror!void {
                 world.time.update();
                 switch (network) {
                     .server => |*s| {
-                        while (try s.hasMessageWaiting()) {
+                        while (!(try s.input.isFrameReady(world.time.frame_number))) {
                             const message = try game_net.receiveInput(s);
-                            world.input_map[message.client_id.value] = message.input;
                             try s.input.onInputReceived(message);
                         }
+                        const inputs = try s.input.consumeFrame(world.time.frame_number);
+                        var i: u8 = 1;
+                        while (i < inputs.list.len) : (i += 1) {
+                            world.input_map[i] = inputs.list[i].?;
+                        }
+                        // === simulate server game ===
                         game_systems.serverMovePlayers(&world);
+                        // ======
                         try game_net.sendSnapshots(s, &world);
                     },
 
                     .client => |c| {
                         const input = engine.Input.fromRaylib();
-                        while (try c.hasMessageWaiting()) {
+                        while (world.time.frame_number > server_frame + 10 or (try c.hasMessageWaiting())) {
+                            if (!try c.hasMessageWaiting()) {
+                                std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
+                            }
                             const part = try game_net.receiveSnapshotPart(&c);
                             // TODO: get_mut panics on wrong id, so probably a bad idea?
                             try world.entities.get_mut(part.entity_diff.id).apply_diff(part.entity_diff);
+                            server_frame = part.frame_number;
                         }
                         try game_net.sendInput(&c, input, world.time.frame_number);
+                        // === simulate client game ===
                         game_systems.movePlayer(&world, input, client_id);
+                        // ======
                     },
                 }
+                // === simulate both game??? ===
                 game_systems.moveEnemies(&world);
+                // ======
+                std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
             },
         }
 
         // Draw
-        //----------------------------------------------------------------------------------
-        rl.beginDrawing();
-        defer rl.endDrawing();
-
-        rl.clearBackground(.light_gray);
-        var iter = world.entities.iter();
-        while (iter.next()) |ent| {
-            if (!ent.visible) continue;
-            switch (ent.render) {
-                .circle => |circle| {
-                    rl.drawCircle(
-                        @intFromFloat(ent.position.x),
-                        @intFromFloat(ent.position.y),
-                        circle.radius,
-                        circle.color,
-                    );
-                },
-                .button => |button| {
-                    rl.drawRectangleLines(
-                        @intFromFloat(ent.position.x - button.width / 2),
-                        @intFromFloat(ent.position.y - button.height / 2),
-                        @intFromFloat(button.width),
-                        @intFromFloat(button.height),
-                        button.color,
-                    );
-                    rl.drawText(
-                        button.text,
-                        @intFromFloat(ent.position.x - 40),
-                        @intFromFloat(ent.position.y - 10),
-                        20,
-                        button.color,
-                    );
-                },
-                .texture => {},
-            }
-        }
-
-        if (world.state == .game) {
-            rl.drawFPS(0, 0);
-            {
-                var b = [_]u8{0} ** 20;
-                const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.getDrift()});
-                rl.drawText(slice, 0, 32, 32, .black);
-            }
-            {
-                var b = [_]u8{0} ** 20;
-                const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.frame_number});
-                rl.drawText(slice, 0, 64, 32, .black);
-            }
-        }
-        // rl.drawText("Congrats! You created your first window!", 190, 200, 20, .black);
-        //----------------------------------------------------------------------------------
+        try drawGame(&world);
 
         // Cleanup
         //----------------------------------------------------------------------------------
@@ -178,6 +143,57 @@ pub fn main() anyerror!void {
     try network.cleanup();
 }
 
+fn drawGame(world: *engine.World) !void {
+    rl.beginDrawing();
+    defer rl.endDrawing();
+
+    rl.clearBackground(.light_gray);
+    var iter = world.entities.iter();
+    while (iter.next()) |ent| {
+        if (!ent.visible) continue;
+        switch (ent.render) {
+            .circle => |circle| {
+                rl.drawCircle(
+                    @intFromFloat(ent.position.x),
+                    @intFromFloat(ent.position.y),
+                    circle.radius,
+                    circle.color,
+                );
+            },
+            .button => |button| {
+                rl.drawRectangleLines(
+                    @intFromFloat(ent.position.x - button.width / 2),
+                    @intFromFloat(ent.position.y - button.height / 2),
+                    @intFromFloat(button.width),
+                    @intFromFloat(button.height),
+                    button.color,
+                );
+                rl.drawText(
+                    button.text,
+                    @intFromFloat(ent.position.x - 40),
+                    @intFromFloat(ent.position.y - 10),
+                    20,
+                    button.color,
+                );
+            },
+            .texture => {},
+        }
+    }
+
+    if (world.state == .game) {
+        rl.drawFPS(0, 0);
+        {
+            var b = [_]u8{0} ** 20;
+            const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.getDrift()});
+            rl.drawText(slice, 0, 32, 32, .black);
+        }
+        {
+            var b = [_]u8{0} ** 20;
+            const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.frame_number});
+            rl.drawText(slice, 0, 64, 32, .black);
+        }
+    }
+}
 // Currently unused, as the server/client is passed in the build options.
 fn spawnMenu(world: *engine.World) void {
     _ = world.entities.spawn(.{

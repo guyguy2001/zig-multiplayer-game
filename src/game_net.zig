@@ -121,14 +121,7 @@ pub const NetworkState = union(NetworkRole) {
 };
 
 pub fn sendMessage(sock: posix.socket_t, address: posix.sockaddr, message: *const Message) !void {
-    // std.debug.print("Sizeof Message: {}\n", .{@sizeOf(Message)});
-    // std.debug.print("Sending {any}: \n", .{message.*});
     const ptr = @as([]const u8, @ptrCast(message))[0..message.sizeOf()];
-    // std.debug.print("Sending (hex): ", .{});
-    // for (ptr) |byte| {
-    //     std.debug.print("{x:0>2} ", .{byte}); // Prints each byte in hex, padded with leading zero if necessary
-    // }
-    // std.debug.print("\n", .{});
 
     _ = try posix.sendto(
         sock,
@@ -145,14 +138,6 @@ fn receiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, Message } {
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
 
     const len = try posix.recvfrom(sock, @ptrCast(&message), 0, &address, &addrlen);
-    // message = Message{ .client_id = .client_id(4), .message = .{ .connection = .{} }, .type = .connection };
-    // const len = 2;
-    // std.debug.print("Received (hex): ", .{});
-    // for (@as([]u8, @ptrCast(&message))[0..len]) |byte| {
-    //     std.debug.print("{x:0>2} ", .{byte}); // Prints each byte in hex, padded with leading zero if necessary
-    // }
-    // std.debug.print("\n", .{});
-    // std.debug.print("Got {d} bytes, out of {d}\n", .{ len, @sizeOf(Message) });
     if (len < 2) {
         @panic("AAHHHHHHHHHHH");
     }
@@ -237,18 +222,24 @@ pub fn receiveSnapshotPart(client: *const Client) !SnapshotPartMessage {
     while (true) {
         // problem is probably that it notices the server sent an ICMP packet of "not yet"
         _, const message = try receiveMessage(client.socket);
+        std.debug.print("Got message: {any}\n", .{message});
 
         switch (message.type) {
             .input => unreachable,
             .connection => continue,
-            .snapshot_part => return message.message.snapshot_part,
+            .snapshot_part => {
+                std.debug.print("Got snapshot part of {}\n", .{message.message.snapshot_part.frame_number});
+                return message.message.snapshot_part;
+            },
         }
     }
 }
 
 pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     var iter = world.entities.iter();
+    std.debug.print("Sending frame {}\n", .{world.time.frame_number});
     while (iter.next()) |entity| {
+        // TODO: Add a "finished sending you everything for this frame" message :(
         if (world.entities.modified_this_frame[entity.id.index]) {
             const message = Message{
                 .type = .snapshot_part,
@@ -259,9 +250,12 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
             };
             for (server.client_addresses) |c| {
                 if (c) |address| {
+                    std.debug.print("P{any} ", .{address});
                     try sendMessage(server.socket, address, &message);
                 }
             }
+            std.debug.print("\n", .{});
         }
     }
+    std.debug.print("Sent snapshots for frame {}\n", .{world.time.frame_number});
 }

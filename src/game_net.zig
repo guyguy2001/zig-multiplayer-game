@@ -238,6 +238,7 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
 }
 
 pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) !void {
+    std.debug.print("F{d} sending input\n", .{frame_number});
     try sendMessageToServer(
         client.socket,
         client.server_address,

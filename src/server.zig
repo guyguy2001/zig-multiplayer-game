@@ -11,6 +11,7 @@ const PlayerList = struct {
         var i: usize = 1;
         while (i < 3) : (i += 1) {
             if (self.list[i] == null) {
+                std.debug.print("null in entry {d}\n", .{i});
                 return false;
             }
         }
@@ -30,26 +31,12 @@ pub const InputBuffer = struct {
 
     pub fn onInputReceived(self: *@This(), message: game_net.InputMessage) !void {
         // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });
-        var list = self.list.at(message.frame_number) catch {
+        std.debug.print("F{d} P{d}", .{ message.frame_number, message.client_id.value });
+        var entry = self.list.at(message.frame_number) catch {
             // std.debug.print("Failure at `at` - {}\n", .{err});
             return;
         };
-        list.list[message.client_id.value] = message.input;
-        // var frame_number: i64 = self.list.first_frame;
-        // if (frame_number == message.frame_number) {
-        //     while (frame_number < self.list.first_frame + self.list.len) : (frame_number += 1) {
-        //         std.debug.print("Checking framer {d}: \n", .{frame_number});
-        //         if (self.list.at(frame_number)) |entry| {
-        //             if (entry.isFull()) {
-        //                 try self.list.dropFrame(frame_number);
-        //                 std.debug.print("Dropping frame {d}\n", .{frame_number});
-        //                 // TODO: simulate the frame, send message to all clients with result.
-        //             } else {
-        //                 break;
-        //             }
-        //         } else |_| unreachable;
-        //     }
-        // }
+        entry.list[message.client_id.value] = message.input;
     }
 
     pub fn isFrameReady(self: *@This(), frame_number: i64) !bool {

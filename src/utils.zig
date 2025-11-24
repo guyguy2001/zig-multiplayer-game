@@ -36,7 +36,10 @@ pub fn to_unpacked(T: type, source: pack_type(T)) T {
     return result;
 }
 
-pub fn MockCyclicBuffer(comptime T: type, comptime empty_value: T) type {
+// This currently uses an allocation-based linked list, while the implementation I actually want
+// would be with a fixed-sized buffer, as part of the point of this struct
+// is for cases where I'm expecting a fixed amount of messages at a time.
+pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
     return struct {
         const Self = @This();
 
@@ -117,7 +120,7 @@ test "cyclic buffer" {
     _ = expect; // autofix
     const expectEqual = std.testing.expectEqual;
 
-    var cyclic_buffer = MockCyclicBuffer(u8, 0).init(std.testing.allocator);
+    var cyclic_buffer = FrameCyclicBuffer(u8, 0).init(std.testing.allocator);
     defer cyclic_buffer.deinit();
     try expectEqual(0, cyclic_buffer.len);
     const at4 = try cyclic_buffer.at(4);

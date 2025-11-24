@@ -35,20 +35,16 @@ pub const FinishedSendingSnapshotsMessage = packed struct {
     frame_number: i64,
 };
 
-pub const MessageType = enum(u8) {
+pub const ClientToServerMessageType = enum(u8) {
     connection = 5,
     input = 6,
-    snapshot_part = 7,
-    finished_sending_snapshots = 8,
 };
 
-pub const Message = packed struct {
-    type: MessageType,
+pub const ClientToServerMessage = packed struct {
+    type: ClientToServerMessageType,
     message: packed union {
         connection: ConnectionMessage,
         input: InputMessage,
-        snapshot_part: SnapshotPartMessage,
-        finished_sending_snapshots: FinishedSendingSnapshotsMessage,
     },
 
     pub fn sizeOf(self: *const @This()) usize {
@@ -56,6 +52,26 @@ pub const Message = packed struct {
         const payload_size: usize = switch (self.type) {
             .connection => @bitSizeOf(ConnectionMessage),
             .input => @bitSizeOf(InputMessage),
+        };
+        return (prefix_size + payload_size + 7) / 8;
+    }
+};
+
+pub const ServerToClientMessageType = enum(u8) {
+    snapshot_part = 17,
+    finished_sending_snapshots = 18,
+};
+
+pub const ServerToClientMessage = packed struct {
+    type: ServerToClientMessageType,
+    message: packed union {
+        snapshot_part: SnapshotPartMessage,
+        finished_sending_snapshots: FinishedSendingSnapshotsMessage,
+    },
+
+    pub fn sizeOf(self: *const @This()) usize {
+        const prefix_size = @bitSizeOf(@TypeOf(self.type));
+        const payload_size: usize = switch (self.type) {
             .snapshot_part => @bitSizeOf(SnapshotPartMessage),
             .finished_sending_snapshots => @bitSizeOf(FinishedSendingSnapshotsMessage),
         };
@@ -127,7 +143,7 @@ pub const NetworkState = union(NetworkRole) {
     }
 };
 
-pub fn sendMessage(sock: posix.socket_t, address: posix.sockaddr, message: *const Message) !void {
+pub fn sendMessageToServer(sock: posix.socket_t, address: posix.sockaddr, message: *const ClientToServerMessage) !void {
     const ptr = @as([]const u8, @ptrCast(message))[0..message.sizeOf()];
 
     _ = try posix.sendto(
@@ -139,8 +155,36 @@ pub fn sendMessage(sock: posix.socket_t, address: posix.sockaddr, message: *cons
     );
 }
 
-fn receiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, Message } {
-    var message: Message = undefined;
+pub fn sendMessageToClient(sock: posix.socket_t, address: posix.sockaddr, message: *const ServerToClientMessage) !void {
+    const ptr = @as([]const u8, @ptrCast(message))[0..message.sizeOf()];
+
+    _ = try posix.sendto(
+        sock,
+        ptr,
+        0,
+        &address,
+        @sizeOf(@TypeOf(address)),
+    );
+}
+
+fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ClientToServerMessage } {
+    var message: ClientToServerMessage = undefined;
+    var address: posix.sockaddr = undefined;
+    var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
+
+    const len = try posix.recvfrom(sock, @ptrCast(&message), 0, &address, &addrlen);
+    if (len < 2) {
+        @panic("AAHHHHHHHHHHH");
+    }
+    if (len != message.sizeOf()) {
+        @panic("AHH2");
+    }
+    // TODO: assert received len == sizeof
+    return .{ address, message };
+}
+
+fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ServerToClientMessage } {
+    var message: ServerToClientMessage = undefined;
     var address: posix.sockaddr = undefined;
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
 
@@ -160,10 +204,10 @@ pub fn connectToServer(id: ClientId) !NetworkState {
     errdefer posix.close(socket);
 
     try posix.connect(socket, &server_address.any, server_address.getOsSockLen());
-    try sendMessage(
+    try sendMessageToServer(
         socket,
         server_address.any,
-        &Message{
+        &ClientToServerMessage{
             .type = .connection,
             .message = .{ .connection = ConnectionMessage{
                 .client_id = id,
@@ -194,10 +238,10 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
 }
 
 pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) !void {
-    try sendMessage(
+    try sendMessageToServer(
         client.socket,
         client.server_address,
-        &Message{
+        &ClientToServerMessage{
             .type = .input,
             .message = .{ .input = InputMessage{
                 .client_id = client.id,
@@ -210,7 +254,7 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) 
 
 pub fn receiveInput(server: *Server) !InputMessage {
     while (true) {
-        const address, const message = try receiveMessage(server.socket);
+        const address, const message = try serverReceiveMessage(server.socket);
 
         switch (message.type) {
             .input => {
@@ -220,24 +264,18 @@ pub fn receiveInput(server: *Server) !InputMessage {
                 try server.onClientConnected(address, message.message.connection.client_id);
                 continue;
             },
-            .snapshot_part => unreachable,
-            .finished_sending_snapshots => unreachable,
         }
     }
 }
 
-pub fn receiveSnapshotPart(client: *const Client) !Message {
+pub fn receiveSnapshotPart(client: *const Client) !ServerToClientMessage {
     while (true) {
         // problem is probably that it notices the server sent an ICMP packet of "not yet"
-        _, const message = try receiveMessage(client.socket);
+        _, const message = try clientReceiveMessage(client.socket);
         std.debug.print("Got message: {any}\n", .{message});
 
         switch (message.type) {
-            .input => unreachable,
-            .connection => continue,
-            // TODO: Change thes struct to only include messages from the server
             .snapshot_part => {
-                std.debug.print("Got snapshot part of {}\n", .{message.message.snapshot_part.frame_number});
                 return message;
             },
             .finished_sending_snapshots => {
@@ -247,11 +285,11 @@ pub fn receiveSnapshotPart(client: *const Client) !Message {
     }
 }
 
-fn sendToAllClients(server: *const Server, message: *const Message) !void {
+fn sendToAllClients(server: *const Server, message: *const ServerToClientMessage) !void {
     for (server.client_addresses) |c| {
         if (c) |address| {
             std.debug.print("P{any} ", .{address});
-            try sendMessage(server.socket, address, message);
+            try sendMessageToClient(server.socket, address, message);
         }
     }
     std.debug.print("\n", .{});
@@ -263,7 +301,7 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     while (iter.next()) |entity| {
         // TODO: Add a "finished sending you everything for this frame" message :(
         if (world.entities.modified_this_frame[entity.id.index]) {
-            try sendToAllClients(server, &Message{
+            try sendToAllClients(server, &ServerToClientMessage{
                 .type = .snapshot_part,
                 .message = .{ .snapshot_part = SnapshotPartMessage{
                     .entity_diff = entity.make_diff(),
@@ -272,7 +310,7 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
             });
         }
     }
-    try sendToAllClients(server, &Message{
+    try sendToAllClients(server, &ServerToClientMessage{
         .type = .finished_sending_snapshots,
         .message = .{ .finished_sending_snapshots = FinishedSendingSnapshotsMessage{
             .frame_number = world.time.frame_number,

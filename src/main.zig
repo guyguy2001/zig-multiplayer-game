@@ -9,7 +9,6 @@ const game_net = @import("game_net.zig");
 const server = @import("server.zig");
 
 pub fn main() anyerror!void {
-    std.debug.print("Foo: {}\n", .{@sizeOf(game_net.Message)});
     // Initialization
     const argsAllocator = std.heap.page_allocator;
     //--------------------------------------------------------------------------------------
@@ -120,18 +119,17 @@ pub fn main() anyerror!void {
                                 std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
                             }
                             const message = try game_net.receiveSnapshotPart(&c);
-                            // TODO: get_mut panics on wrong id, so probably a bad idea?
                             switch (message.type) {
                                 .snapshot_part => {
                                     const part = message.message.snapshot_part;
+                                    // TODO: get_mut panics on wrong id, so probably a bad idea?
                                     try world.entities.get_mut(part.entity_diff.id).apply_diff(part.entity_diff);
                                     server_frame = part.frame_number;
+                                    std.debug.print("Got snapshot part of {}\n", .{part.frame_number});
                                 },
                                 .finished_sending_snapshots => {
                                     server_frame = message.message.finished_sending_snapshots.frame_number;
                                 },
-                                .input => unreachable,
-                                .connection => unreachable,
                             }
                         }
                         try game_net.sendInput(&c, input, world.time.frame_number);

@@ -31,10 +31,15 @@ pub const SnapshotPartMessage = packed struct {
     entity_diff: engine.EntityDiff,
 };
 
+pub const FinishedSendingSnapshotsMessage = packed struct {
+    frame_number: i64,
+};
+
 pub const MessageType = enum(u8) {
     connection = 5,
     input = 6,
     snapshot_part = 7,
+    finished_sending_snapshots = 8,
 };
 
 pub const Message = packed struct {
@@ -43,6 +48,7 @@ pub const Message = packed struct {
         connection: ConnectionMessage,
         input: InputMessage,
         snapshot_part: SnapshotPartMessage,
+        finished_sending_snapshots: FinishedSendingSnapshotsMessage,
     },
 
     pub fn sizeOf(self: *const @This()) usize {
@@ -51,6 +57,7 @@ pub const Message = packed struct {
             .connection => @bitSizeOf(ConnectionMessage),
             .input => @bitSizeOf(InputMessage),
             .snapshot_part => @bitSizeOf(SnapshotPartMessage),
+            .finished_sending_snapshots => @bitSizeOf(FinishedSendingSnapshotsMessage),
         };
         return (prefix_size + payload_size + 7) / 8;
     }
@@ -214,11 +221,12 @@ pub fn receiveInput(server: *Server) !InputMessage {
                 continue;
             },
             .snapshot_part => unreachable,
+            .finished_sending_snapshots => unreachable,
         }
     }
 }
 
-pub fn receiveSnapshotPart(client: *const Client) !SnapshotPartMessage {
+pub fn receiveSnapshotPart(client: *const Client) !Message {
     while (true) {
         // problem is probably that it notices the server sent an ICMP packet of "not yet"
         _, const message = try receiveMessage(client.socket);
@@ -227,12 +235,26 @@ pub fn receiveSnapshotPart(client: *const Client) !SnapshotPartMessage {
         switch (message.type) {
             .input => unreachable,
             .connection => continue,
+            // TODO: Change thes struct to only include messages from the server
             .snapshot_part => {
                 std.debug.print("Got snapshot part of {}\n", .{message.message.snapshot_part.frame_number});
-                return message.message.snapshot_part;
+                return message;
+            },
+            .finished_sending_snapshots => {
+                return message; // TODO: Maybe return just the frame number?
             },
         }
     }
+}
+
+fn sendToAllClients(server: *const Server, message: *const Message) !void {
+    for (server.client_addresses) |c| {
+        if (c) |address| {
+            std.debug.print("P{any} ", .{address});
+            try sendMessage(server.socket, address, message);
+        }
+    }
+    std.debug.print("\n", .{});
 }
 
 pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
@@ -241,21 +263,20 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     while (iter.next()) |entity| {
         // TODO: Add a "finished sending you everything for this frame" message :(
         if (world.entities.modified_this_frame[entity.id.index]) {
-            const message = Message{
+            try sendToAllClients(server, &Message{
                 .type = .snapshot_part,
                 .message = .{ .snapshot_part = SnapshotPartMessage{
                     .entity_diff = entity.make_diff(),
                     .frame_number = world.time.frame_number,
                 } },
-            };
-            for (server.client_addresses) |c| {
-                if (c) |address| {
-                    std.debug.print("P{any} ", .{address});
-                    try sendMessage(server.socket, address, &message);
-                }
-            }
-            std.debug.print("\n", .{});
+            });
         }
     }
+    try sendToAllClients(server, &Message{
+        .type = .finished_sending_snapshots,
+        .message = .{ .finished_sending_snapshots = FinishedSendingSnapshotsMessage{
+            .frame_number = world.time.frame_number,
+        } },
+    });
     std.debug.print("Sent snapshots for frame {}\n", .{world.time.frame_number});
 }

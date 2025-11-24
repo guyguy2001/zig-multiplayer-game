@@ -110,14 +110,29 @@ pub fn main() anyerror!void {
 
                     .client => |c| {
                         const input = engine.Input.fromRaylib();
+                        // OK
+                        // I think this is what I wanna do:
+                        // Whenever I receive a message, add it to the queue in the slot of the correct frame number. Fuck, I might even want this to happen asynchronously.
+                        // Whenever it's time to simulate a frame, load that frame from the queue and apply whatever we got there.
+                        // Whenever we get a packet for a frame that's already simulated, cry (log error or something)
                         while (world.time.frame_number > server_frame + 10 or (try c.hasMessageWaiting())) {
                             if (!try c.hasMessageWaiting()) {
                                 std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
                             }
-                            const part = try game_net.receiveSnapshotPart(&c);
+                            const message = try game_net.receiveSnapshotPart(&c);
                             // TODO: get_mut panics on wrong id, so probably a bad idea?
-                            try world.entities.get_mut(part.entity_diff.id).apply_diff(part.entity_diff);
-                            server_frame = part.frame_number;
+                            switch (message.type) {
+                                .snapshot_part => {
+                                    const part = message.message.snapshot_part;
+                                    try world.entities.get_mut(part.entity_diff.id).apply_diff(part.entity_diff);
+                                    server_frame = part.frame_number;
+                                },
+                                .finished_sending_snapshots => {
+                                    server_frame = message.message.finished_sending_snapshots.frame_number;
+                                },
+                                .input => unreachable,
+                                .connection => unreachable,
+                            }
                         }
                         try game_net.sendInput(&c, input, world.time.frame_number);
                         // === simulate client game ===

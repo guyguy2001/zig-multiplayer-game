@@ -27,6 +27,10 @@ pub fn main() anyerror!void {
         std.debug.print("client id: {}\n", .{client_id});
     }
 
+    var debug_alloc = std.heap.DebugAllocator(.{}).init;
+    defer _ = debug_alloc.deinit();
+    const alloc = debug_alloc.allocator();
+
     const screenWidth = 800;
     const screenHeight = 450;
     const fps = 60;
@@ -65,9 +69,9 @@ pub fn main() anyerror!void {
     spawnGame(&world);
     var network: game_net.NetworkState =
         (if (is_server)
-            try game_net.setupServer(std.heap.c_allocator)
+            try game_net.setupServer(alloc)
         else
-            try game_net.connectToServer(client_id));
+            try game_net.connectToServer(client_id, alloc));
     if (!is_server) {
         std.Thread.sleep(3_000_000);
     }
@@ -107,7 +111,7 @@ pub fn main() anyerror!void {
                         try game_net.sendSnapshots(s, &world);
                     },
 
-                    .client => |c| {
+                    .client => |*c| {
                         const input = engine.Input.fromRaylib();
                         // OK
                         // I think this is what I wanna do:
@@ -118,18 +122,29 @@ pub fn main() anyerror!void {
                             if (!try c.hasMessageWaiting()) {
                                 std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
                             }
-                            const message = try game_net.receiveSnapshotPart(&c);
+                            const message = try game_net.receiveSnapshotPart(c);
                             switch (message.type) {
                                 .snapshot_part => {
                                     const part = message.message.snapshot_part;
                                     // TODO: get_mut panics on wrong id, so probably a bad idea?
-                                    try world.entities.get_mut(part.entity_diff.id).apply_diff(part.entity_diff);
+                                    // TODO: Move this to be when I actually consume that frame
+                                    const list = c.server_snapshots.at(part.frame_number) catch {
+                                        std.debug.print("BADDDDDDDD\n", .{});
+                                        return;
+                                    };
+                                    try list.append(alloc, part.entity_diff);
                                     server_frame = part.frame_number;
                                     std.debug.print("Got snapshot part of {}\n", .{part.frame_number});
                                 },
                                 .finished_sending_snapshots => {
                                     server_frame = message.message.finished_sending_snapshots.frame_number;
                                 },
+                            }
+
+                            // TODO: make this run only when it should
+                            const stuff = c.server_snapshots.consumeFrame(world.time.frame_number);
+                            for (stuff.iter()) |entity_diff| {
+                                try world.entities.get_mut(entity_diff.id).apply_diff(entity_diff);
                             }
                         }
                         try game_net.sendInput(&c, input, world.time.frame_number);

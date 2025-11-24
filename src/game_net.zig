@@ -121,6 +121,10 @@ pub const Client = struct {
     id: ClientId,
     socket: posix.socket_t,
     server_address: posix.sockaddr,
+    server_snapshots: utils.FrameCyclicBuffer(
+        std.ArrayList(engine.EntityDiff),
+        std.ArrayList(engine.EntityDiff).empty,
+    ),
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
@@ -199,7 +203,7 @@ fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ServerTo
     return .{ address, message };
 }
 
-pub fn connectToServer(id: ClientId) !NetworkState {
+pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !NetworkState {
     const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM | posix.SOCK.CLOEXEC, 0);
     errdefer posix.close(socket);
 
@@ -219,6 +223,7 @@ pub fn connectToServer(id: ClientId) !NetworkState {
         .socket = socket,
         .server_address = server_address.any,
         .id = id,
+        .server_snapshots = .init(gpa),
     } };
 }
 

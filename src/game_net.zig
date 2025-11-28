@@ -1,4 +1,5 @@
 const std = @import("std");
+const client_struct = @import("client.zig");
 const engine = @import("engine.zig");
 const server_structs = @import("server.zig");
 const utils = @import("utils.zig");
@@ -121,10 +122,7 @@ pub const Client = struct {
     id: ClientId,
     socket: posix.socket_t,
     server_address: posix.sockaddr,
-    server_snapshots: utils.FrameCyclicBuffer(
-        std.ArrayList(engine.EntityDiff),
-        std.ArrayList(engine.EntityDiff).empty,
-    ),
+    server_snapshots: client_struct.SnapshotsBuffer,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
@@ -180,6 +178,7 @@ fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ClientTo
     if (len < 2) {
         @panic("AAHHHHHHHHHHH");
     }
+    // TODO: assert received type makes sense and whatnot
     if (len != message.sizeOf()) {
         @panic("AHH2");
     }
@@ -305,7 +304,6 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     var iter = world.entities.iter();
     std.debug.print("Sending frame {}\n", .{world.time.frame_number});
     while (iter.next()) |entity| {
-        // TODO: Add a "finished sending you everything for this frame" message :(
         if (world.entities.modified_this_frame[entity.id.index]) {
             try sendToAllClients(server, &ServerToClientMessage{
                 .type = .snapshot_part,

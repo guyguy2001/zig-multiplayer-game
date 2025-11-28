@@ -31,7 +31,7 @@ pub const InputBuffer = struct {
 
     pub fn onInputReceived(self: *@This(), message: game_net.InputMessage) !void {
         // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });
-        std.debug.print("F{d} P{d}", .{ message.frame_number, message.client_id.value });
+        std.debug.print("F{d} P{d} Input received \n", .{ message.frame_number, message.client_id.value });
         var entry = self.list.at(message.frame_number) catch {
             // std.debug.print("Failure at `at` - {}\n", .{err});
             return;

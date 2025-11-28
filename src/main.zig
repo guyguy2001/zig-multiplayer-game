@@ -8,6 +8,8 @@ const game_systems = @import("game_systems.zig");
 const game_net = @import("game_net.zig");
 const server = @import("server.zig");
 
+const frame_buffer_size = 10;
+
 pub fn main() anyerror!void {
     // Initialization
     const argsAllocator = std.heap.page_allocator;
@@ -118,7 +120,7 @@ pub fn main() anyerror!void {
                         // Whenever I receive a message, add it to the queue in the slot of the correct frame number. Fuck, I might even want this to happen asynchronously.
                         // Whenever it's time to simulate a frame, load that frame from the queue and apply whatever we got there.
                         // Whenever we get a packet for a frame that's already simulated, cry (log error or something)
-                        while (world.time.frame_number > server_frame + 10 or (try c.hasMessageWaiting())) {
+                        while (world.time.frame_number > server_frame + frame_buffer_size or (try c.hasMessageWaiting())) {
                             if (!try c.hasMessageWaiting()) {
                                 std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
                             }
@@ -128,26 +130,30 @@ pub fn main() anyerror!void {
                                     const part = message.message.snapshot_part;
                                     // TODO: get_mut panics on wrong id, so probably a bad idea?
                                     // TODO: Move this to be when I actually consume that frame
-                                    const list = c.server_snapshots.at(part.frame_number) catch {
-                                        std.debug.print("BADDDDDDDD\n", .{});
-                                        return;
-                                    };
-                                    try list.append(alloc, part.entity_diff);
+                                    try c.server_snapshots.onSnapshotPartReceived(message.message.snapshot_part);
                                     server_frame = part.frame_number;
                                     std.debug.print("Got snapshot part of {}\n", .{part.frame_number});
                                 },
                                 .finished_sending_snapshots => {
+                                    try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
                                     server_frame = message.message.finished_sending_snapshots.frame_number;
                                 },
                             }
 
                             // TODO: make this run only when it should
-                            const stuff = c.server_snapshots.consumeFrame(world.time.frame_number);
-                            for (stuff.iter()) |entity_diff| {
+                        }
+                        if (world.time.frame_number > frame_buffer_size) {
+                            // We look 2 frames ago, see timeline.md.
+                            const effective_frame = world.time.frame_number - frame_buffer_size;
+                            const snapshots = try c.server_snapshots.consumeFrame(effective_frame);
+                            if (!snapshots.is_done) {
+                                std.debug.print("W: F{d} snapshots aren't done\n", .{effective_frame});
+                            }
+                            for (snapshots.snapshots.items) |entity_diff| {
                                 try world.entities.get_mut(entity_diff.id).apply_diff(entity_diff);
                             }
                         }
-                        try game_net.sendInput(&c, input, world.time.frame_number);
+                        try game_net.sendInput(c, input, world.time.frame_number);
                         // === simulate client game ===
                         game_systems.movePlayer(&world, input, client_id);
                         // ======

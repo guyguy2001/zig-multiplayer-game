@@ -76,12 +76,19 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
         }
 
         pub fn at(self: *Self, frame: i64) !*T {
-            try self.extend(frame);
-            var f = self.first_frame;
-            var curr = self.list.first.?;
-            if (frame - f > 2000) {
+            if (frame < self.first_frame) {
+                // TODO: Consider retuning null
                 return error.InvalidFrameAccess;
             }
+            var f = self.first_frame;
+            if (frame - f > 2000) {
+                // I think I meant this to catch past frames, but this doesn't work because frame is signed.
+                // I should probably fix it and remove the first if, since it would break on frame number overflow
+                return error.InvalidFrameAccess;
+            }
+            try self.extend(frame);
+            // I think the panic is because we received a message for a past frame
+            var curr = self.list.first.?;
             while (f < frame) {
                 f += 1;
                 curr = curr.next.?;

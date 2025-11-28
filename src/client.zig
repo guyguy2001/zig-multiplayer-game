@@ -63,9 +63,8 @@ pub const SnapshotsBuffer = struct {
             std.debug.print("ERROR: Tried consuming frame {d} while we're still on frame {d}\n", .{ frame_number, self.list.first_frame });
             return error.WrongFrameNumber;
         }
-        const result = (try self.list.at(frame_number)).*;
         const block = self.list.dropFrame(frame_number);
-        block.data.deinit(self.gpa);
+        const result = block.data;
         self.list.freeBlock(block);
         return result;
     }

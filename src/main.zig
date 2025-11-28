@@ -146,21 +146,21 @@ pub fn main() anyerror!void {
 
                             // TODO: make this run only when it should
                         }
-                        var snapshotList: []engine.EntityDiff = &[0]engine.EntityDiff{};
+                        try game_net.sendInput(c, input, world.time.frame_number);
+
                         if (world.time.frame_number > frame_buffer_size) {
                             // We look 2 frames ago, see timeline.md.
                             const effective_frame = world.time.frame_number - frame_buffer_size;
-                            const snapshots = try c.server_snapshots.consumeFrame(effective_frame);
+                            var snapshots = try c.server_snapshots.consumeFrame(effective_frame);
+                            defer snapshots.deinit(c.server_snapshots.gpa);
+
                             if (!snapshots.is_done) {
                                 std.debug.print("W: F{d} snapshots aren't done\n", .{effective_frame});
                             }
-                            snapshotList = snapshots.snapshots.items;
-                            // for (snapshots.snapshots.items) |entity_diff| {
-                            //     try world.entities.get_mut(entity_diff.id).apply_diff(entity_diff);
-                            // }
+                            const snapshotList = snapshots.snapshots.items;
+                            try simulation.applySnapshots(&world, snapshotList);
                         }
-                        try game_net.sendInput(c, input, world.time.frame_number);
-                        try simulation.simulateClient(&world, input, client_id, snapshotList);
+                        try simulation.simulateClient(&world, input, client_id);
                     },
                 }
                 std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});

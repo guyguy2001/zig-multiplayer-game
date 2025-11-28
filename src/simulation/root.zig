@@ -8,7 +8,7 @@ pub fn simulateServer(world: *engine.World) !void {
     movement.moveEnemies(world);
 }
 
-fn applySnapshots(world: *engine.World, snapshots: []engine.EntityDiff) !void {
+pub fn applySnapshots(world: *engine.World, snapshots: []engine.EntityDiff) !void {
     for (snapshots) |entity_diff| {
         try world.entities.get_mut(entity_diff.id).apply_diff(entity_diff);
     }
@@ -18,9 +18,7 @@ pub fn simulateClient(
     world: *engine.World,
     input: engine.Input,
     client_id: game_net.ClientId,
-    snapshots: []engine.EntityDiff,
 ) !void {
-    try applySnapshots(world, snapshots);
     movement.movePlayer(world, input, client_id);
     movement.moveEnemies(world);
 }

@@ -149,7 +149,6 @@ pub fn main() anyerror!void {
                                     // TODO: get_mut panics on wrong id, so probably a bad idea?
                                     // TODO: Move this to be when I actually consume that frame
                                     try c.server_snapshots.onSnapshotPartReceived(message.message.snapshot_part);
-                                    server_frame = part.frame_number;
                                     std.debug.print("Got snapshot part of {}\n", .{part.frame_number});
                                 },
                                 .finished_sending_snapshots => {

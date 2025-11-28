@@ -289,7 +289,6 @@ pub fn receiveSnapshotPart(client: *const Client) !ServerToClientMessage {
     while (true) {
         // problem is probably that it notices the server sent an ICMP packet of "not yet"
         _, const message = try clientReceiveMessage(client.socket);
-        std.debug.print("Got message: {any}\n", .{message});
 
         switch (message.type) {
             .snapshot_part => {

@@ -85,7 +85,7 @@ pub fn main() anyerror!void {
 
     var server_frame: i64 = 0;
     // Main game loop
-    while (!rl.windowShouldClose()) { // Detect window close button or ESC key
+    main_loop: while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // Update
         //----------------------------------------------------------------------------------
         // TODO: Update your variables here
@@ -104,7 +104,14 @@ pub fn main() anyerror!void {
                 switch (network) {
                     .server => |*s| {
                         while (!(try s.input.isFrameReady(world.time.frame_number))) {
-                            const message = try game_net.receiveInput(s);
+                            const message = game_net.receiveInput(s) catch |err| {
+                                if (err == error.ConnectionResetByPeer) {
+                                    std.debug.print("Disconnected by peer!\n", .{});
+                                    break :main_loop;
+                                } else {
+                                    return err;
+                                }
+                            };
                             try s.input.onInputReceived(message);
                         }
                         const inputs = try s.input.consumeFrame(world.time.frame_number);
@@ -128,7 +135,14 @@ pub fn main() anyerror!void {
                             if (!try c.hasMessageWaiting()) {
                                 std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
                             }
-                            const message = try game_net.receiveSnapshotPart(c);
+                            const message = game_net.receiveSnapshotPart(c) catch |err| {
+                                if (err == error.ConnectionResetByPeer) {
+                                    std.debug.print("Disconnected by peer!\n", .{});
+                                    break :main_loop;
+                                } else {
+                                    return err;
+                                }
+                            };
                             switch (message.type) {
                                 .snapshot_part => {
                                     const part = message.message.snapshot_part;

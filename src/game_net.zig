@@ -2,6 +2,7 @@ const std = @import("std");
 const client_struct = @import("client.zig");
 const engine = @import("engine.zig");
 const server_structs = @import("server.zig");
+const simulation = @import("simulation/root.zig");
 const utils = @import("utils.zig");
 const posix = std.posix;
 
@@ -128,6 +129,7 @@ pub const Client = struct {
     socket: posix.socket_t,
     server_address: posix.sockaddr,
     server_snapshots: client_struct.SnapshotsBuffer,
+    timeline: simulation.ClientTimeline,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
@@ -136,6 +138,9 @@ pub const Client = struct {
     pub fn deinit(self: *@This()) void {
         posix.close(self.socket);
         self.server_snapshots.deinit();
+        while (self.timeline.len > 0) {
+            self.timeline.freeBlock(self.timeline.dropFrame(self.timeline.first_frame));
+        }
     }
 };
 
@@ -233,6 +238,7 @@ pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !NetworkState {
         .server_address = server_address.any,
         .id = id,
         .server_snapshots = .init(gpa),
+        .timeline = .init(gpa),
     } };
 }
 
@@ -304,18 +310,19 @@ pub fn receiveSnapshotPart(client: *const Client) !ServerToClientMessage {
 fn sendToAllClients(server: *const Server, message: *const ServerToClientMessage) !void {
     for (server.client_addresses) |c| {
         if (c) |address| {
-            std.debug.print("P{any} ", .{address});
+            // std.debug.print("P{any} ", .{address});
             try sendMessageToClient(server.socket, address, message);
         }
     }
-    std.debug.print("\n", .{});
+    // std.debug.print("\n", .{});
 }
 
 pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     var iter = world.entities.iter();
     std.debug.print("Sending frame {}\n", .{world.time.frame_number});
     while (iter.next()) |entity| {
-        if (world.entities.modified_this_frame[entity.id.index]) {
+        // TODO: Periodically send position in case of PL
+        if (world.entities.modified_this_frame[entity.id.index] and entity.network != null) {
             try sendToAllClients(server, &ServerToClientMessage{
                 .type = .snapshot_part,
                 .message = .{ .snapshot_part = SnapshotPartMessage{

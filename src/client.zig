@@ -26,7 +26,7 @@ pub const FrameSnapshots = struct {
 };
 
 pub const SnapshotsBuffer = struct {
-    list: utils.FrameCyclicBuffer(FrameSnapshots, FrameSnapshots.init()),
+    list: utils.FrameCyclicBuffer(FrameSnapshots, .init(), true),
     gpa: std.mem.Allocator,
 
     pub fn onSnapshotPartReceived(self: *@This(), part: game_net.SnapshotPartMessage) !void {
@@ -57,7 +57,7 @@ pub const SnapshotsBuffer = struct {
 
     // This seems like it's shared between this and ther server's
     pub fn consumeFrame(self: *@This(), frame_number: i64) !FrameSnapshots {
-        std.debug.print("F{d} Consume\n", .{frame_number});
+        // std.debug.print("F{d} Consume\n", .{frame_number});
         if (self.list.first_frame != frame_number) {
             // TODO should this even be a parameter? evidently yes
             std.debug.print("ERROR: Tried consuming frame {d} while we're still on frame {d}\n", .{ frame_number, self.list.first_frame });

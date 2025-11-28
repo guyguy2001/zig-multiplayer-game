@@ -27,7 +27,7 @@ const PlayerList = struct {
 
 /// Holds the inputs of the players from every as-of-yet unstimulated frame.
 pub const InputBuffer = struct {
-    list: utils.FrameCyclicBuffer(PlayerList, PlayerList.empty()),
+    list: utils.FrameCyclicBuffer(PlayerList, .empty(), true),
 
     pub fn onInputReceived(self: *@This(), message: game_net.InputMessage) !void {
         // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });

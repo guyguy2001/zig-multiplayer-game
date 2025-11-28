@@ -39,7 +39,7 @@ pub fn to_unpacked(T: type, source: pack_type(T)) T {
 // This currently uses an allocation-based linked list, while the implementation I actually want
 // would be with a fixed-sized buffer, as part of the point of this struct
 // is for cases where I'm expecting a fixed amount of messages at a time.
-pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
+pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime allow_empty: bool) type {
     return struct {
         const Self = @This();
 
@@ -65,6 +65,9 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
 
         pub fn extend(self: *Self, frame: i64) !void {
             while (self.first_frame + self.len <= frame) {
+                if (!allow_empty) {
+                    return error.InvalidExtendWithDisallowEmpty;
+                }
                 const block = try self.allocator.create(Block);
                 block.* = .{
                     .data = empty_value,
@@ -75,9 +78,24 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
             }
         }
 
+        pub fn append(self: *Self, data: T, frame: i64) !void {
+            if (self.first_frame + self.len != frame) {
+                std.debug.print("Tried to append frame {d}, but we have frames {d}-{d}\n", .{ frame, self.first_frame, self.first_frame + self.len - 1 });
+                return error.InvalidFrameAppend;
+            }
+            const block = try self.allocator.create(Block);
+            block.* = .{
+                .data = data,
+                .node = .{},
+            };
+            self.list.append(&block.node);
+            self.len += 1;
+        }
+
         pub fn at(self: *Self, frame: i64) !*T {
             if (frame < self.first_frame) {
                 // TODO: Consider retuning null
+                std.debug.print("Tried to access F{d}, valid range is F{d}-F{d}\n", .{ frame, self.first_frame, self.first_frame + self.len });
                 return error.InvalidFrameAccess;
             }
             var f = self.first_frame;
@@ -87,14 +105,13 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
                 return error.InvalidFrameAccess;
             }
             try self.extend(frame);
-            // I think the panic is because we received a message for a past frame
             var curr = self.list.first.?;
             while (f < frame) {
                 f += 1;
                 curr = curr.next.?;
             }
 
-            const block: *Block = @fieldParentPtr("node", curr);
+            const block: *Block = @alignCast(@fieldParentPtr("node", curr));
             return &block.data;
         }
 
@@ -105,7 +122,7 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
             // TODO: Merge these 2 lines:
             const first = self.list.first.?;
             _ = self.list.popFirst();
-            const block: *Block = @fieldParentPtr("node", first);
+            const block: *Block = @alignCast(@fieldParentPtr("node", first));
             self.len -= 1;
             self.first_frame += 1;
             return block;

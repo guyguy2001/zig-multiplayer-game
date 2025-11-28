@@ -117,7 +117,7 @@ pub fn main() anyerror!void {
                         const inputs = try s.input.consumeFrame(world.time.frame_number);
                         var i: u8 = 1;
                         while (i < inputs.list.len) : (i += 1) {
-                            world.input_map[i] = inputs.list[i].?;
+                            world.input_map[i] = inputs.list[i].?; // TODO: When rebasing on the server, I'll need to extract this to the timeline
                         }
 
                         try simulation.simulateServer(&world);
@@ -163,17 +163,45 @@ pub fn main() anyerror!void {
 
                         if (world.time.frame_number > frame_buffer_size) {
                             // We look 2 frames ago, see timeline.md.
-                            const effective_frame = world.time.frame_number - frame_buffer_size;
-                            var snapshots = try c.server_snapshots.consumeFrame(effective_frame);
+                            const snapshot_frame = world.time.frame_number - frame_buffer_size;
+                            var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
                             defer snapshots.deinit(c.server_snapshots.gpa);
 
                             if (!snapshots.is_done) {
-                                std.debug.print("W: F{d} snapshots aren't done\n", .{effective_frame});
+                                std.debug.print("W: F{d} snapshots aren't done\n", .{snapshot_frame});
                             }
                             const snapshotList = snapshots.snapshots.items;
-                            try simulation.applySnapshots(&world, snapshotList);
+                            // == Update rest of the world to frame 101, rebase myself (102-110) on top of 101
+
+                            // For current frame - apply the rest of the worlds' frame 101 to our 111
+                            // try simulation.applyRemoteEntitiesSnapshots(&world, client_id, snapshotList);
+                            try simulation.applySnapshots(&c.timeline, snapshot_frame, snapshotList);
+
+                            // For myself - go back 10 frames to my 101, update myself, rebase from there
+                            const time_before = world.time.frame_number;
+                            world = try simulation.resimulateFrom(&c.timeline, client_id, snapshot_frame);
+                            if (time_before != world.time.frame_number) {
+                                std.debug.print("Mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
+                                unreachable;
+                            }
+                            c.timeline.freeBlock(c.timeline.dropFrame(snapshot_frame));
+                            // now my 111 is updated with knowledge of my authoritative position of 101
+
+                            // Now we have authoritative state of 101, slightly better state for 102 onwards
+                            // Simulates myself for frame 111
                         }
                         try simulation.simulateClient(&world, input, client_id);
+
+                        // TODO: Make sure this needs to sit here, after everything. If this is saved to frame number 111,
+                        // I think the important question is: what will be in the packet the server sends as 111?
+                        // Will it be this state, after simulating the input, or pre?
+                        try c.timeline.append(
+                            simulation.ClientTimelineNode{
+                                .world = world,
+                                .input = input,
+                            },
+                            world.time.frame_number,
+                        );
                     },
                 }
                 std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
@@ -188,6 +216,26 @@ pub fn main() anyerror!void {
         world.entities.modified_this_frame = .{false} ** world.entities.modified_this_frame.len;
         //----------------------------------------------------------------------------------
     }
+}
+
+fn debugClientState(c: game_net.Client) void {
+    std.debug.print("START !!!!!!!!!!\n", .{});
+    {
+        var frame_number = c.timeline.first_frame;
+        while (frame_number < c.timeline.first_frame + c.timeline.len) : (frame_number += 1) {
+            const my_world = (try c.timeline.at(frame_number)).world;
+            std.debug.print("POS: {}\n", .{my_world.time.frame_number});
+        }
+    }
+    std.debug.print("MID !!!!!!!!!!\n", .{});
+    {
+        var frame_number = c.server_snapshots.list.first_frame;
+        while (frame_number < c.server_snapshots.list.first_frame + c.server_snapshots.list.len) : (frame_number += 1) {
+            const snapshot = try c.server_snapshots.list.at(frame_number);
+            std.debug.print("snapshots: {any}\n", .{snapshot.snapshots.items});
+        }
+    }
+    std.debug.print("END !!!!!!!!!!\n", .{});
 }
 
 fn drawGame(world: *engine.World) !void {
@@ -283,6 +331,7 @@ fn spawnGame(world: *engine.World) void {
         },
         .tag = .player,
         .network = .{ .owner_id = .client_id(1) },
+        .name = "Player 1",
     });
     _ = world.entities.spawn(.{
         .position = .{ .x = screen_size.x / 3 * 2, .y = screen_size.y / 2 },
@@ -295,6 +344,7 @@ fn spawnGame(world: *engine.World) void {
         },
         .tag = .player,
         .network = .{ .owner_id = .client_id(2) },
+        .name = "Player 2",
     });
     _ = world.entities.spawn(.{
         .position = .{
@@ -314,6 +364,7 @@ fn spawnGame(world: *engine.World) void {
             .remaining = 750,
             .just_finished = false,
         },
+        .name = "Green Ball",
     });
     _ = world.entities.spawn(.{
         .position = .{ .x = screen_size.x * 7 / 8, .y = screen_size.y / 2 },
@@ -330,5 +381,6 @@ fn spawnGame(world: *engine.World) void {
             .remaining = 750,
             .just_finished = false,
         },
+        .name = "Green Ball",
     });
 }

@@ -74,6 +74,7 @@ pub const NetworkedEntity = struct {
 
 pub const Entity = struct {
     id: Id = .invalid,
+    name: ?[]const u8,
     position: rl.Vector2,
     speed: f32 = 0,
     render: Render,
@@ -105,6 +106,13 @@ pub const Entity = struct {
 
     pub fn apply_diff(self: *@This(), diff: EntityDiff) !void {
         if (!self.id.equals(diff.id)) return error.DiffHasWrongId;
+        std.debug.print("apply_diff on {?s} - ({d}, {d}) -> ({d}, {d})\n", .{
+            self.name,
+            self.position.x,
+            self.position.y,
+            diff.position.x,
+            diff.position.y,
+        });
         self.position = rl.Vector2.init(diff.position.x, diff.position.y);
     }
 };

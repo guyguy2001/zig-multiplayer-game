@@ -19,6 +19,10 @@ pub const FrameSnapshots = struct {
             .is_done = false,
         };
     }
+
+    pub fn deinit(self: *@This(), gpa: std.mem.Allocator) void {
+        self.snapshots.deinit(gpa);
+    }
 };
 
 pub const SnapshotsBuffer = struct {
@@ -60,7 +64,9 @@ pub const SnapshotsBuffer = struct {
             return error.WrongFrameNumber;
         }
         const result = (try self.list.at(frame_number)).*;
-        try self.list.dropFrame(frame_number);
+        const block = self.list.dropFrame(frame_number);
+        block.data.deinit(self.gpa);
+        self.list.freeBlock(block);
         return result;
     }
 
@@ -72,6 +78,10 @@ pub const SnapshotsBuffer = struct {
     }
 
     pub fn deinit(self: *@This()) void {
-        self.list.deinit();
+        while (self.list.len > 0) {
+            const block = self.list.dropFrame(self.list.first_frame);
+            block.data.deinit(self.gpa);
+            self.list.freeBlock(block);
+        }
     }
 };

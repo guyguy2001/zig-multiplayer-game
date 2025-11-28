@@ -49,7 +49,8 @@ pub const InputBuffer = struct {
             unreachable; // TODO should this even be a parameter?
         }
         const result = (try self.list.at(frame_number)).*;
-        try self.list.dropFrame(frame_number);
+        const block = self.list.dropFrame(frame_number);
+        self.list.freeBlock(block);
         return result;
     }
 
@@ -60,6 +61,8 @@ pub const InputBuffer = struct {
     }
 
     pub fn deinit(self: *@This()) void {
-        self.list.deinit();
+        while (self.list.len > 0) {
+            self.list.freeBlock(self.list.dropFrame(self.list.first_frame));
+        }
     }
 };

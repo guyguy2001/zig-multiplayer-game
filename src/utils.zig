@@ -98,26 +98,21 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T) type {
             return &block.data;
         }
 
-        fn freeNode(self: Self, node: *std.DoublyLinkedList.Node) void {
-            const block: *Block = @fieldParentPtr("node", node);
-            self.allocator.destroy(block);
-        }
-
-        pub fn dropFrame(self: *Self, frame: i64) !void {
+        pub fn dropFrame(self: *Self, frame: i64) *Block {
             if (frame != self.first_frame) {
-                return error.TriedToDropWrongFrame;
+                unreachable;
             }
+            // TODO: Merge these 2 lines:
             const first = self.list.first.?;
             _ = self.list.popFirst();
-            self.freeNode(first);
+            const block: *Block = @fieldParentPtr("node", first);
             self.len -= 1;
             self.first_frame += 1;
+            return block;
         }
 
-        pub fn deinit(self: *Self) void {
-            while (self.list.pop()) |node| {
-                self.freeNode(node);
-            }
+        pub fn freeBlock(self: *Self, block: *Block) void {
+            self.allocator.destroy(block);
         }
     };
 }

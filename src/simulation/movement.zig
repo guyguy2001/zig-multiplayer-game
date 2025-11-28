@@ -1,7 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
-const engine = @import("engine.zig");
-const game_net = @import("game_net.zig");
+const engine = @import("../engine.zig");
+const game_net = @import("../game_net.zig");
 
 pub fn movePlayer(world: *engine.World, input: engine.Input, client_id: game_net.ClientId) void {
     const direction = input.getDirection();

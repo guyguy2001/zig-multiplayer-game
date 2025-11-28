@@ -4,9 +4,10 @@ const std = @import("std");
 const rl = @import("raylib");
 
 const engine = @import("engine.zig");
-const game_systems = @import("game_systems.zig");
+const simulation = @import("simulation/root.zig");
 const game_net = @import("game_net.zig");
 const server = @import("server.zig");
+const client = @import("client.zig");
 
 const frame_buffer_size = 10;
 
@@ -45,6 +46,8 @@ pub fn main() anyerror!void {
             2 => rl.setWindowPosition(screenWidth, 0),
             else => {},
         }
+    } else {
+        rl.setWindowPosition(screenWidth / 2, @intFromFloat(screenHeight * 1.25));
     }
     defer rl.closeWindow(); // Close window and OpenGL context
 
@@ -107,9 +110,8 @@ pub fn main() anyerror!void {
                         while (i < inputs.list.len) : (i += 1) {
                             world.input_map[i] = inputs.list[i].?;
                         }
-                        // === simulate server game ===
-                        game_systems.serverMovePlayers(&world);
-                        // ======
+
+                        try simulation.simulateServer(&world);
                         try game_net.sendSnapshots(s, &world);
                     },
 
@@ -142,6 +144,7 @@ pub fn main() anyerror!void {
 
                             // TODO: make this run only when it should
                         }
+                        var snapshotList: []engine.EntityDiff = &[0]engine.EntityDiff{};
                         if (world.time.frame_number > frame_buffer_size) {
                             // We look 2 frames ago, see timeline.md.
                             const effective_frame = world.time.frame_number - frame_buffer_size;
@@ -149,19 +152,15 @@ pub fn main() anyerror!void {
                             if (!snapshots.is_done) {
                                 std.debug.print("W: F{d} snapshots aren't done\n", .{effective_frame});
                             }
-                            for (snapshots.snapshots.items) |entity_diff| {
-                                try world.entities.get_mut(entity_diff.id).apply_diff(entity_diff);
-                            }
+                            snapshotList = snapshots.snapshots.items;
+                            // for (snapshots.snapshots.items) |entity_diff| {
+                            //     try world.entities.get_mut(entity_diff.id).apply_diff(entity_diff);
+                            // }
                         }
                         try game_net.sendInput(c, input, world.time.frame_number);
-                        // === simulate client game ===
-                        game_systems.movePlayer(&world, input, client_id);
-                        // ======
+                        try simulation.simulateClient(&world, input, client_id, snapshotList);
                     },
                 }
-                // === simulate both game??? ===
-                game_systems.moveEnemies(&world);
-                // ======
                 std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
             },
         }

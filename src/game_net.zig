@@ -116,6 +116,11 @@ pub const Server = struct {
         std.debug.print("Client {d} connected!\n", .{client_id.value});
         self.client_addresses[client_id.value] = client_address;
     }
+
+    pub fn deinit(self: *@This()) void {
+        posix.close(self.socket);
+        self.input.deinit();
+    }
 };
 
 pub const Client = struct {
@@ -127,19 +132,24 @@ pub const Client = struct {
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
     }
+
+    pub fn deinit(self: *@This()) void {
+        posix.close(self.socket);
+        self.server_snapshots.deinit();
+    }
 };
 
 pub const NetworkState = union(NetworkRole) {
     client: Client,
     server: Server,
 
-    pub fn cleanup(self: *@This()) !void {
+    pub fn cleanup(self: *@This()) void {
         switch (self.*) {
-            .client => |c| {
-                posix.close(c.socket);
+            .client => |*c| {
+                c.deinit();
             },
-            .server => |s| {
-                posix.close(s.socket);
+            .server => |*s| {
+                s.deinit();
             },
         }
     }
@@ -234,10 +244,12 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
 
     std.debug.print("UDP Server listening on port {d}\n", .{port});
 
+    const input = server_structs.InputBuffer.init(gpa);
+    errdefer input.deinit();
     return NetworkState{ .server = Server{
         .socket = sock,
         .client_addresses = .{null} ** 3,
-        .input = .init(gpa),
+        .input = input,
     } };
 }
 

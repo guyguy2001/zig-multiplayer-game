@@ -77,6 +77,8 @@ pub fn main() anyerror!void {
             try game_net.setupServer(alloc)
         else
             try game_net.connectToServer(client_id, alloc));
+    defer network.cleanup();
+
     if (!is_server) {
         std.Thread.sleep(3_000_000);
     }
@@ -173,7 +175,6 @@ pub fn main() anyerror!void {
         world.entities.modified_this_frame = .{false} ** world.entities.modified_this_frame.len;
         //----------------------------------------------------------------------------------
     }
-    try network.cleanup();
 }
 
 fn drawGame(world: *engine.World) !void {

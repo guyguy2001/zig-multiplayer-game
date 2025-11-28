@@ -58,4 +58,8 @@ pub const InputBuffer = struct {
             .list = .init(gpa),
         };
     }
+
+    pub fn deinit(self: *@This()) void {
+        self.list.deinit();
+    }
 };

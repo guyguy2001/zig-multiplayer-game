@@ -70,4 +70,8 @@ pub const SnapshotsBuffer = struct {
             .gpa = gpa,
         };
     }
+
+    pub fn deinit(self: *@This()) void {
+        self.list.deinit();
+    }
 };

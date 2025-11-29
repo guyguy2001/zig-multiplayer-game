@@ -8,6 +8,8 @@ const posix = std.posix;
 
 const port = 12348;
 const server_address = std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, port);
+// We use ms because this is how it's defined in winsock - https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-setsockopt
+const default_socket_timeout_ms: std.os.windows.DWORD = 2000;
 
 pub const ClientId = packed struct {
     value: u8,
@@ -218,8 +220,14 @@ fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ServerTo
 }
 
 pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !NetworkState {
-    const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM | posix.SOCK.CLOEXEC, 0);
+    const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(socket);
+    try posix.setsockopt(
+        socket,
+        posix.SOL.SOCKET,
+        posix.SO.RCVTIMEO,
+        std.mem.asBytes(&default_socket_timeout_ms),
+    );
 
     try posix.connect(socket, &server_address.any, server_address.getOsSockLen());
     try sendMessageToServer(
@@ -245,6 +253,12 @@ pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !NetworkState {
 pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
     const sock = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(sock);
+    try posix.setsockopt(
+        sock,
+        posix.SOL.SOCKET,
+        posix.SO.RCVTIMEO,
+        std.mem.asBytes(&default_socket_timeout_ms),
+    );
 
     try posix.bind(sock, &server_address.any, server_address.getOsSockLen());
 

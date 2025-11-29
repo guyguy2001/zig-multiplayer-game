@@ -30,6 +30,14 @@ pub const SnapshotsBuffer = struct {
     list: utils.FrameCyclicBuffer(FrameSnapshots, .init(), true),
     gpa: std.mem.Allocator,
 
+    pub fn firstFrame(self: *const @This()) utils.FrameNumber {
+        return self.list.first_frame;
+    }
+
+    pub fn len(self: *const @This()) u64 {
+        return self.list.len;
+    }
+
     pub fn onSnapshotPartReceived(self: *@This(), part: game_net.SnapshotPartMessage) !void {
         std.debug.print("F{d} Sp{d} Snapshot part\n", .{ part.frame_number, part.entity_diff.id.index });
         var entry = self.list.at(part.frame_number) catch |err| {
@@ -53,7 +61,7 @@ pub const SnapshotsBuffer = struct {
 
     pub fn isFrameReady(self: *@This(), frame_number: u64) !bool {
         // TODO: frame_number is always first_frame
-        return (try self.list.at(frame_number)).isFull();
+        return (try self.list.at(frame_number)).is_done;
     }
 
     // This seems like it's shared between this and ther server's
@@ -92,11 +100,7 @@ pub const HandleIncomingMessagesResult = enum {
 };
 
 pub fn handleIncomingMessages(c: *game_net.Client, frame_number: utils.FrameNumber, time_per_frame: u64) !HandleIncomingMessagesResult {
-    while (frame_number > c.snapshot_done_server_frame + consts.frame_buffer_size or (try c.hasMessageWaiting())) {
-        if (!try c.hasMessageWaiting()) {
-            // TODO: This is bad. the problem that when the latency is high, the snapshots I can expect to be able to use are much older.
-            std.debug.print("Waiting: Our frame number is {}, server's is snap: {}, ack: {}\n", .{ frame_number, c.snapshot_done_server_frame, c.ack_server_frame });
-        }
+    while (try c.hasMessageWaiting()) {
         _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
             if (err == error.ConnectionResetByPeer or err == error.Timeout) {
                 std.debug.print("Disconnected by peer!\n", .{});
@@ -123,6 +127,10 @@ pub fn handleIncomingMessages(c: *game_net.Client, frame_number: utils.FrameNumb
                 if (actual_server_buffer > consts.desired_server_buffer + 1) {
                     // Sleep half a frame each time we notice we're ahead of the server
                     std.Thread.sleep(utils.millisToNanos(time_per_frame / 2));
+                }
+                if (actual_server_buffer > consts.desired_server_buffer * 2 + 1) {
+                    // Starting to get bad
+                    std.Thread.sleep(utils.millisToNanos(time_per_frame * 2));
                 }
 
                 std.debug.print("rtt is {d}\n", .{rtt});

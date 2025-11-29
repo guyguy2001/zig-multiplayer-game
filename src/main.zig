@@ -137,9 +137,9 @@ pub fn main() anyerror!void {
 
                 try game_net.sendInput(c, input, world.time.frame_number);
 
-                if (world.time.frame_number > consts.frame_buffer_size) {
+                while (c.server_snapshots.len() > 0 and try c.server_snapshots.isFrameReady(c.server_snapshots.firstFrame())) {
                     // We look 2 frames ago, see timeline.md.
-                    const snapshot_frame = world.time.frame_number - consts.frame_buffer_size;
+                    const snapshot_frame = c.server_snapshots.firstFrame();
                     var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
                     defer snapshots.deinit(c.server_snapshots.gpa);
 

@@ -11,15 +11,6 @@ pub fn simulateServer(world: *engine.World) !void {
     movement.moveEnemies(world);
 }
 
-// pub fn applyRemoteEntitiesSnapshots(world: *engine.World, client_id: game_net.ClientId, snapshots: []engine.EntityDiff) !void {
-//     for (snapshots) |entity_diff| {
-//         const entity = world.entities.get_mut(entity_diff.id);
-//         if (!entity.isSimulatedLocally(client_id)) {
-//             try entity.apply_diff(entity_diff);
-//         }
-//     }
-// }
-
 pub fn applySnapshots(timeline: *ClientTimeline, target_frame: i64, snapshots: []engine.EntityDiff) !void {
     const world = &(try timeline.at(target_frame)).world;
     for (snapshots) |entity_diff| {
@@ -38,11 +29,12 @@ pub fn simulateClient(
 }
 
 pub const ClientTimelineNode = struct {
-    world: engine.World, // 100, ..., 111
-    input: engine.Input, // 100, ..., 111
+    world: engine.World,
+    input: engine.Input,
 
-    // We don't store the snapshots, since we only re-simulate nodes that didn't yet get the server authoritative state
-    // snapshots: []engine.EntityDiff, // 100, 101
+    // We don't store the snapshots,
+    // since we only re-simulate nodes that didn't yet get the server authoritative state,
+    // and then drop them from the timeline.
 };
 
 pub const ClientTimeline = utils.FrameCyclicBuffer(ClientTimelineNode, undefined, false);
@@ -52,8 +44,11 @@ pub fn resimulateFrom(
     client_id: game_net.ClientId,
     starting_frame: i64,
 ) !engine.World {
-    var world = &(try timeline.at(starting_frame)).world;
-    var frame = starting_frame + 1; // Do not apply the input of the first frame, as the snapshot is from after applying the input
+    var world = (try timeline.at(starting_frame)).world;
+
+    // Do not apply the input of the first frame, as the snapshot is from after applying the input
+    var frame = starting_frame + 1;
+
     while (frame < timeline.first_frame + timeline.len) : (frame += 1) {
         const node = try timeline.at(frame);
 
@@ -61,12 +56,15 @@ pub fn resimulateFrom(
 
         // TODO: Extract the time outside of world, add an assert at the end of this function to make sure outside-of-world-time is synced with in-world time
         world.time.update();
-        try simulateClient(world, node.input, client_id);
+        try simulateClient(&world, node.input, client_id);
 
-        node.world = world.*;
+        node.world = world;
     }
-    world.time.update(); // This function runs after we already updated the time on the real world, and since we undid it, we need to redo it here
-    return world.*;
+    // This function runs after we already updated the time on the real world,
+    // and since we undid it, we need to redo it here
+    world.time.update();
+
+    return world;
 }
 // const ServerTimelineNode = struct {
 //     world: engine.World,

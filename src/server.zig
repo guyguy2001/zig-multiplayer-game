@@ -41,6 +41,7 @@ pub const InputBuffer = struct {
 
     pub fn isFrameReady(self: *@This(), frame_number: i64) !bool {
         // TODO: frame_number is always first_frame
+        // TODO: Create const `at` for when I don't want to modify
         return (try self.list.at(frame_number)).isFull();
     }
 
@@ -51,6 +52,17 @@ pub const InputBuffer = struct {
         const result = (try self.list.at(frame_number)).*;
         const block = self.list.dropFrame(frame_number);
         self.list.freeBlock(block);
+        return result;
+    }
+
+    pub fn numReadyFrames(self: *@This()) !i64 {
+        var result: i64 = 0;
+        for (@intCast(self.list.first_frame)..@intCast(self.list.first_frame + self.list.len)) |frame| {
+            if (!try self.isFrameReady(@intCast(frame))) {
+                break;
+            }
+            result += 1;
+        }
         return result;
     }
 

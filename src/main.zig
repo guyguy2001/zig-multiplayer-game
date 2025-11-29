@@ -102,150 +102,151 @@ pub fn main() anyerror!void {
             else => {},
         }
 
-        switch (world.state) {
-            .menu => {
-                unreachable;
-            },
-            .game => {
-                world.time.update();
-                switch (network) {
-                    .server => |*s| {
-                        while (!(try s.input.isFrameReady(world.time.frame_number))) {
-                            const client_address, const message = game_net.serverReceiveMessage(s.socket) catch |err| {
-                                if (err == error.ConnectionResetByPeer) {
-                                    std.debug.print("Disconnected by peer!\n", .{});
-                                    break :main_loop;
-                                } else {
-                                    return err;
-                                }
-                            };
-
-                            switch (message.type) {
-                                .input => {
-                                    const input_message = message.message.input;
-                                    try game_net.sendMessageToClient(s.socket, client_address, &game_net.ServerToClientMessage{
-                                        .type = .input_ack,
-                                        .message = .{ .input_ack = game_net.InputAckMessage{
-                                            .ack_frame_number = input_message.frame_number,
-                                            .received_during_frame = world.time.frame_number,
-                                        } },
-                                    });
-                                    try s.input.onInputReceived(input_message);
-                                },
-                                .connection => {
-                                    try s.onClientConnected(
-                                        client_address,
-                                        message.message.connection.client_id,
-                                    );
-                                },
-                            }
+        // switch (world.state) {
+        //     .menu => {
+        //         unreachable;
+        //     },
+        //     .game => {
+        world.time.update();
+        switch (network) {
+            .server => |*s| {
+                while (!(try s.input.isFrameReady(world.time.frame_number)) or (try s.hasMessageWaiting())) {
+                    const client_address, const message = game_net.serverReceiveMessage(s.socket) catch |err| {
+                        if (err == error.ConnectionResetByPeer) {
+                            std.debug.print("Disconnected by peer!\n", .{});
+                            break :main_loop;
+                        } else {
+                            return err;
                         }
-                        const inputs = try s.input.consumeFrame(world.time.frame_number);
-                        var i: u8 = 1;
-                        while (i < inputs.list.len) : (i += 1) {
-                            world.input_map[i] = inputs.list[i].?; // TODO: When rebasing on the server, I'll need to extract this to the timeline
-                        }
+                    };
 
-                        try simulation.simulateServer(&world);
-                        try game_net.sendSnapshots(s, &world);
-                    },
-
-                    .client => |*c| {
-                        const input = engine.Input.fromRaylib();
-                        // OK
-                        // I think this is what I wanna do:
-                        // Whenever I receive a message, add it to the queue in the slot of the correct frame number. Fuck, I might even want this to happen asynchronously.
-                        // Whenever it's time to simulate a frame, load that frame from the queue and apply whatever we got there.
-                        // Whenever we get a packet for a frame that's already simulated, cry (log error or something)
-                        while (world.time.frame_number > server_frame + frame_buffer_size or (try c.hasMessageWaiting())) {
-                            if (!try c.hasMessageWaiting()) {
-                                std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
-                            }
-                            _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
-                                if (err == error.ConnectionResetByPeer) {
-                                    std.debug.print("Disconnected by peer!\n", .{});
-                                    break :main_loop;
-                                } else {
-                                    return err;
-                                }
-                            };
-                            switch (message.type) {
-                                .snapshot_part => {
-                                    const part = message.message.snapshot_part;
-                                    // TODO: get_mut panics on wrong id, so probably a bad idea?
-                                    // TODO: Move this to be when I actually consume that frame
-                                    try c.server_snapshots.onSnapshotPartReceived(message.message.snapshot_part);
-                                    std.debug.print("Got snapshot part of {}\n", .{part.frame_number});
-                                },
-                                .finished_sending_snapshots => {
-                                    try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
-                                    server_frame = message.message.finished_sending_snapshots.frame_number;
-                                },
-                                .input_ack => {
-                                    const ack = message.message.input_ack;
-                                    const rtt = world.time.frame_number - ack.ack_frame_number;
-                                    if (world.time.frame_number - @divFloor(rtt, 2) - 1 > ack.received_during_frame) {
-                                        // Sleep half a frame each time we notice we're ahead of the server
-                                        std.Thread.sleep(utils.millisToNanos(@intCast(@divFloor(world.time.time_per_frame, 2))));
-                                    }
-
-                                    std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
-                                },
-                            }
-
-                            // TODO: make this run only when it should
-                        }
-                        try game_net.sendInput(c, input, world.time.frame_number);
-
-                        if (world.time.frame_number > frame_buffer_size) {
-                            // We look 2 frames ago, see timeline.md.
-                            const snapshot_frame = world.time.frame_number - frame_buffer_size;
-                            var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
-                            defer snapshots.deinit(c.server_snapshots.gpa);
-
-                            if (!snapshots.is_done) {
-                                std.debug.print("W: F{d} snapshots aren't done\n", .{snapshot_frame});
-                            }
-                            const snapshotList = snapshots.snapshots.items;
-                            // == Update rest of the world to frame 101, rebase myself (102-110) on top of 101
-
-                            // For current frame - apply the rest of the worlds' frame 101 to our 111
-                            // try simulation.applyRemoteEntitiesSnapshots(&world, client_id, snapshotList);
-                            try simulation.applySnapshots(&c.timeline, snapshot_frame, snapshotList);
-
-                            // For myself - go back 10 frames to my 101, update myself, rebase from there
-                            const time_before = world.time.frame_number;
-                            world = try simulation.resimulateFrom(&c.timeline, client_id, snapshot_frame);
-                            if (time_before != world.time.frame_number) {
-                                std.debug.print("Mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
-                                unreachable;
-                            }
-                            c.timeline.freeBlock(c.timeline.dropFrame(snapshot_frame));
-                            // now my 111 is updated with knowledge of my authoritative position of 101
-
-                            // Now we have authoritative state of 101, slightly better state for 102 onwards
-                            // Simulates myself for frame 111
-                        }
-                        try simulation.simulateClient(&world, input, client_id);
-
-                        // TODO: Make sure this needs to sit here, after everything. If this is saved to frame number 111,
-                        // I think the important question is: what will be in the packet the server sends as 111?
-                        // Will it be this state, after simulating the input, or pre?
-                        try c.timeline.append(
-                            simulation.ClientTimelineNode{
-                                .world = world,
-                                .input = input,
-                            },
-                            world.time.frame_number,
-                        );
-                    },
+                    switch (message.type) {
+                        .input => {
+                            const input_message = message.message.input;
+                            try game_net.sendMessageToClient(s.socket, client_address, &game_net.ServerToClientMessage{
+                                .type = .input_ack,
+                                .message = .{ .input_ack = game_net.InputAckMessage{
+                                    .ack_frame_number = input_message.frame_number,
+                                    .received_during_frame = world.time.frame_number,
+                                } },
+                            });
+                            try s.input.onInputReceived(input_message);
+                        },
+                        .connection => {
+                            try s.onClientConnected(
+                                client_address,
+                                message.message.connection.client_id,
+                            );
+                        },
+                    }
                 }
-                std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
+                const inputs = try s.input.consumeFrame(world.time.frame_number);
+                var i: u8 = 1;
+                while (i < inputs.list.len) : (i += 1) {
+                    world.input_map[i] = inputs.list[i].?; // TODO: When rebasing on the server, I'll need to extract this to the timeline
+                }
+
+                try simulation.simulateServer(&world);
+                try game_net.sendSnapshots(s, &world);
+                try debugServerState(s);
+            },
+
+            .client => |*c| {
+                const input = engine.Input.fromRaylib();
+                // OK
+                // I think this is what I wanna do:
+                // Whenever I receive a message, add it to the queue in the slot of the correct frame number. Fuck, I might even want this to happen asynchronously.
+                // Whenever it's time to simulate a frame, load that frame from the queue and apply whatever we got there.
+                // Whenever we get a packet for a frame that's already simulated, cry (log error or something)
+                while (world.time.frame_number > server_frame + frame_buffer_size or (try c.hasMessageWaiting())) {
+                    if (!try c.hasMessageWaiting()) {
+                        std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
+                    }
+                    _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
+                        if (err == error.ConnectionResetByPeer) {
+                            std.debug.print("Disconnected by peer!\n", .{});
+                            break :main_loop;
+                        } else {
+                            return err;
+                        }
+                    };
+                    switch (message.type) {
+                        .snapshot_part => {
+                            const part = message.message.snapshot_part;
+                            // TODO: get_mut panics on wrong id, so probably a bad idea?
+                            // TODO: Move this to be when I actually consume that frame
+                            try c.server_snapshots.onSnapshotPartReceived(message.message.snapshot_part);
+                            std.debug.print("Got snapshot part of {}\n", .{part.frame_number});
+                        },
+                        .finished_sending_snapshots => {
+                            try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
+                            server_frame = message.message.finished_sending_snapshots.frame_number;
+                        },
+                        .input_ack => {
+                            const ack = message.message.input_ack;
+                            const rtt = world.time.frame_number - ack.ack_frame_number;
+                            if (world.time.frame_number - @divFloor(rtt, 2) - 10 > ack.received_during_frame) {
+                                // Sleep half a frame each time we notice we're ahead of the server
+                                std.Thread.sleep(utils.millisToNanos(@intCast(@divFloor(world.time.time_per_frame, 2))));
+                            }
+
+                            std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
+                        },
+                    }
+
+                    // TODO: make this run only when it should
+                }
+                try game_net.sendInput(c, input, world.time.frame_number);
+
+                if (world.time.frame_number > frame_buffer_size) {
+                    // We look 2 frames ago, see timeline.md.
+                    const snapshot_frame = world.time.frame_number - frame_buffer_size;
+                    var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
+                    defer snapshots.deinit(c.server_snapshots.gpa);
+
+                    if (!snapshots.is_done) {
+                        std.debug.print("W: F{d} snapshots aren't done\n", .{snapshot_frame});
+                    }
+                    const snapshotList = snapshots.snapshots.items;
+                    // == Update rest of the world to frame 101, rebase myself (102-110) on top of 101
+
+                    // For current frame - apply the rest of the worlds' frame 101 to our 111
+                    // try simulation.applyRemoteEntitiesSnapshots(&world, client_id, snapshotList);
+                    try simulation.applySnapshots(&c.timeline, snapshot_frame, snapshotList);
+
+                    // For myself - go back 10 frames to my 101, update myself, rebase from there
+                    const time_before = world.time.frame_number;
+                    world = try simulation.resimulateFrom(&c.timeline, client_id, snapshot_frame);
+                    if (time_before != world.time.frame_number) {
+                        std.debug.print("Mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
+                        unreachable;
+                    }
+                    c.timeline.freeBlock(c.timeline.dropFrame(snapshot_frame));
+                    // now my 111 is updated with knowledge of my authoritative position of 101
+
+                    // Now we have authoritative state of 101, slightly better state for 102 onwards
+                    // Simulates myself for frame 111
+                }
+                try simulation.simulateClient(&world, input, client_id);
+
+                // TODO: Make sure this needs to sit here, after everything. If this is saved to frame number 111,
+                // I think the important question is: what will be in the packet the server sends as 111?
+                // Will it be this state, after simulating the input, or pre?
+                try c.timeline.append(
+                    simulation.ClientTimelineNode{
+                        .world = world,
+                        .input = input,
+                    },
+                    world.time.frame_number,
+                );
             },
         }
+        std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
+        // },
+        // }
 
         // Draw
-        try drawGame(&world);
+        try drawGame(&world, &network);
 
         // Cleanup
         //----------------------------------------------------------------------------------
@@ -254,7 +255,7 @@ pub fn main() anyerror!void {
     }
 }
 
-fn debugClientState(c: game_net.Client) void {
+fn debugClientState(c: *game_net.Client) void {
     std.debug.print("START !!!!!!!!!!\n", .{});
     {
         var frame_number = c.timeline.first_frame;
@@ -274,7 +275,27 @@ fn debugClientState(c: game_net.Client) void {
     std.debug.print("END !!!!!!!!!!\n", .{});
 }
 
-fn drawGame(world: *engine.World) !void {
+fn debugServerState(s: *game_net.Server) !void {
+    std.debug.print("START !!!!!!!!!!\n", .{});
+    {
+        var frame_number = s.input.list.first_frame;
+        while (frame_number < s.input.list.first_frame + s.input.list.len) : (frame_number += 1) {
+            const inputs = try s.input.list.at(frame_number);
+            std.debug.print("inputs: {}\n", .{inputs});
+        }
+    }
+    std.debug.print("MID !!!!!!!!!!\n", .{});
+    // {
+    //     var frame_number = s.server_snapshots.list.first_frame;
+    //     while (frame_number < s.server_snapshots.list.first_frame + s.server_snapshots.list.len) : (frame_number += 1) {
+    //         const snapshot = try s.server_snapshots.list.at(frame_number);
+    //         std.debug.print("snapshots: {any}\n", .{snapshot.snapshots.items});
+    //     }
+    // }
+    // std.debug.print("END !!!!!!!!!!\n", .{});
+}
+
+fn drawGame(world: *engine.World, network: *game_net.NetworkState) !void {
     rl.beginDrawing();
     defer rl.endDrawing();
 
@@ -314,14 +335,22 @@ fn drawGame(world: *engine.World) !void {
     if (world.state == .game) {
         rl.drawFPS(0, 0);
         {
-            var b = [_]u8{0} ** 20;
-            const drift_text = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.getDrift()});
+            var buff = [_]u8{0} ** 20;
+            const drift_text = try std.fmt.bufPrintZ(&buff, "{d}", .{world.time.getDrift()});
             rl.drawText(drift_text, 0, 32, 32, .black);
         }
         {
-            var b = [_]u8{0} ** 20;
-            const frame_number_text = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.frame_number});
-            rl.drawText(frame_number_text, 0, 64, 32, .black);
+            var buff = [_]u8{0} ** 20;
+            const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{world.time.frame_number});
+            rl.drawText(frame_number_text, 0, 32 * 2, 32, .black);
+        }
+        switch (network.*) {
+            .server => |*s| {
+                var buff = [_]u8{0} ** 20;
+                const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{try s.input.numReadyFrames()});
+                rl.drawText(frame_number_text, 0, 32 * 3, 32, .green);
+            },
+            else => {},
         }
     }
 }

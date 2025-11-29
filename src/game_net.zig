@@ -309,7 +309,7 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
 }
 
 pub fn sendInput(client: *const Client, input: engine.Input, frame_number: u64) !void {
-    std.debug.print("F{d} sending input\n", .{frame_number});
+    // std.debug.print("F{d} sending input\n", .{frame_number});
     if (client.debug_flags.outgoing_pl_percent > 0 and utils.randInt(100) < client.debug_flags.outgoing_pl_percent) {
         std.debug.print("Simulated PL on input :(", .{});
         return;
@@ -341,7 +341,7 @@ fn sendToAllClients(server: *const Server, message: *const ServerToClientMessage
 
 pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     var iter = world.entities.iter();
-    std.debug.print("Sending frame {}\n", .{world.time.frame_number});
+    // std.debug.print("Sending frame {}\n", .{world.time.frame_number});
     while (iter.next()) |entity| {
         if (@mod(world.time.frame_number, 20) == 0 or // Periodically send positions in case of PL
             // Otherwise, only change modified entities
@@ -362,5 +362,5 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
             .frame_number = world.time.frame_number,
         } },
     });
-    std.debug.print("Sent snapshots for frame {}\n", .{world.time.frame_number});
+    // std.debug.print("Sent snapshots for frame {}\n", .{world.time.frame_number});
 }

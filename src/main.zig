@@ -124,7 +124,7 @@ pub fn main() anyerror!void {
 
                 try simulation.simulateServer(&world, inputs);
                 try game_net.sendSnapshots(s, &world);
-                try debugServerState(s);
+                // try debugServerState(s);
             },
 
             .client => |*c| {
@@ -180,7 +180,7 @@ pub fn main() anyerror!void {
                 );
             },
         }
-        std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
+        // std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
         // },
         // }
 

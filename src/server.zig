@@ -12,7 +12,7 @@ const PlayersInput = struct {
         var i: usize = 1;
         while (i < 3) : (i += 1) {
             if (self.list[i] == null) {
-                std.debug.print("null in entry {d}\n", .{i});
+                // std.debug.print("null in entry {d}\n", .{i});
                 return false;
             }
         }

@@ -8,8 +8,9 @@ const simulation = @import("simulation/root.zig");
 const game_net = @import("game_net.zig");
 const server = @import("server.zig");
 const client = @import("client.zig");
+const utils = @import("utils.zig");
 
-const frame_buffer_size = 10;
+const frame_buffer_size = 3;
 
 pub fn main() anyerror!void {
     // Initialization
@@ -90,9 +91,15 @@ pub fn main() anyerror!void {
         //----------------------------------------------------------------------------------
         // TODO: Update your variables here
         //----------------------------------------------------------------------------------
-        if (world.time.getDrift() < 0) {
-            const to_sleep: u64 = @intFromFloat(world.time.getDrift() * -1 * @as(f32, @floatFromInt(world.time.time_per_frame)) * 1_000_000);
-            std.Thread.sleep(to_sleep);
+        switch (network) {
+            .server => if (world.time.getDrift() < 0) {
+                // TODO: This probably conflicts with the "waiting for server" logic
+                const to_sleep: u64 = utils.millisToNanos(@intFromFloat(
+                    world.time.getDrift() * -1 * @as(f32, @floatFromInt(world.time.time_per_frame)),
+                ));
+                std.Thread.sleep(to_sleep);
+            },
+            else => {},
         }
 
         switch (world.state) {
@@ -104,7 +111,7 @@ pub fn main() anyerror!void {
                 switch (network) {
                     .server => |*s| {
                         while (!(try s.input.isFrameReady(world.time.frame_number))) {
-                            const message = game_net.receiveInput(s) catch |err| {
+                            const client_address, const message = game_net.serverReceiveMessage(s.socket) catch |err| {
                                 if (err == error.ConnectionResetByPeer) {
                                     std.debug.print("Disconnected by peer!\n", .{});
                                     break :main_loop;
@@ -112,7 +119,26 @@ pub fn main() anyerror!void {
                                     return err;
                                 }
                             };
-                            try s.input.onInputReceived(message);
+
+                            switch (message.type) {
+                                .input => {
+                                    const input_message = message.message.input;
+                                    try game_net.sendMessageToClient(s.socket, client_address, &game_net.ServerToClientMessage{
+                                        .type = .input_ack,
+                                        .message = .{ .input_ack = game_net.InputAckMessage{
+                                            .ack_frame_number = input_message.frame_number,
+                                            .received_during_frame = world.time.frame_number,
+                                        } },
+                                    });
+                                    try s.input.onInputReceived(input_message);
+                                },
+                                .connection => {
+                                    try s.onClientConnected(
+                                        client_address,
+                                        message.message.connection.client_id,
+                                    );
+                                },
+                            }
                         }
                         const inputs = try s.input.consumeFrame(world.time.frame_number);
                         var i: u8 = 1;
@@ -135,7 +161,7 @@ pub fn main() anyerror!void {
                             if (!try c.hasMessageWaiting()) {
                                 std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
                             }
-                            const message = game_net.receiveSnapshotPart(c) catch |err| {
+                            _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
                                 if (err == error.ConnectionResetByPeer) {
                                     std.debug.print("Disconnected by peer!\n", .{});
                                     break :main_loop;
@@ -154,6 +180,16 @@ pub fn main() anyerror!void {
                                 .finished_sending_snapshots => {
                                     try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
                                     server_frame = message.message.finished_sending_snapshots.frame_number;
+                                },
+                                .input_ack => {
+                                    const ack = message.message.input_ack;
+                                    const rtt = world.time.frame_number - ack.ack_frame_number;
+                                    if (world.time.frame_number - @divFloor(rtt, 2) - 1 > ack.received_during_frame) {
+                                        // Sleep half a frame each time we notice we're ahead of the server
+                                        std.Thread.sleep(utils.millisToNanos(@intCast(@divFloor(world.time.time_per_frame, 2))));
+                                    }
+
+                                    std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
                                 },
                             }
 
@@ -279,13 +315,13 @@ fn drawGame(world: *engine.World) !void {
         rl.drawFPS(0, 0);
         {
             var b = [_]u8{0} ** 20;
-            const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.getDrift()});
-            rl.drawText(slice, 0, 32, 32, .black);
+            const drift_text = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.getDrift()});
+            rl.drawText(drift_text, 0, 32, 32, .black);
         }
         {
             var b = [_]u8{0} ** 20;
-            const slice = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.frame_number});
-            rl.drawText(slice, 0, 64, 32, .black);
+            const frame_number_text = try std.fmt.bufPrintZ(&b, "{d}", .{world.time.frame_number});
+            rl.drawText(frame_number_text, 0, 64, 32, .black);
         }
     }
 }

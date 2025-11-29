@@ -39,6 +39,11 @@ pub const FinishedSendingSnapshotsMessage = packed struct {
     frame_number: i64,
 };
 
+pub const InputAckMessage = packed struct {
+    ack_frame_number: i64,
+    received_during_frame: i64,
+};
+
 pub const ClientToServerMessageType = enum(u8) {
     connection = 5,
     input = 6,
@@ -64,6 +69,7 @@ pub const ClientToServerMessage = packed struct {
 pub const ServerToClientMessageType = enum(u8) {
     snapshot_part = 17,
     finished_sending_snapshots = 18,
+    input_ack = 19,
 };
 
 pub const ServerToClientMessage = packed struct {
@@ -71,6 +77,7 @@ pub const ServerToClientMessage = packed struct {
     message: packed union {
         snapshot_part: SnapshotPartMessage,
         finished_sending_snapshots: FinishedSendingSnapshotsMessage,
+        input_ack: InputAckMessage,
     },
 
     pub fn sizeOf(self: *const @This()) usize {
@@ -78,6 +85,7 @@ pub const ServerToClientMessage = packed struct {
         const payload_size: usize = switch (self.type) {
             .snapshot_part => @bitSizeOf(SnapshotPartMessage),
             .finished_sending_snapshots => @bitSizeOf(FinishedSendingSnapshotsMessage),
+            .input_ack => @bitSizeOf(InputAckMessage),
         };
         return (prefix_size + payload_size + 7) / 8;
     }
@@ -186,7 +194,7 @@ pub fn sendMessageToClient(sock: posix.socket_t, address: posix.sockaddr, messag
     );
 }
 
-fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ClientToServerMessage } {
+pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ClientToServerMessage } {
     var message: ClientToServerMessage = undefined;
     var address: posix.sockaddr = undefined;
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
@@ -203,7 +211,7 @@ fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ClientTo
     return .{ address, message };
 }
 
-fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ServerToClientMessage } {
+pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, ServerToClientMessage } {
     var message: ServerToClientMessage = undefined;
     var address: posix.sockaddr = undefined;
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
@@ -287,38 +295,6 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) 
             } },
         },
     );
-}
-
-pub fn receiveInput(server: *Server) !InputMessage {
-    while (true) {
-        const address, const message = try serverReceiveMessage(server.socket);
-
-        switch (message.type) {
-            .input => {
-                return message.message.input;
-            },
-            .connection => {
-                try server.onClientConnected(address, message.message.connection.client_id);
-                continue;
-            },
-        }
-    }
-}
-
-pub fn receiveSnapshotPart(client: *const Client) !ServerToClientMessage {
-    while (true) {
-        // problem is probably that it notices the server sent an ICMP packet of "not yet"
-        _, const message = try clientReceiveMessage(client.socket);
-
-        switch (message.type) {
-            .snapshot_part => {
-                return message;
-            },
-            .finished_sending_snapshots => {
-                return message; // TODO: Maybe return just the frame number?
-            },
-        }
-    }
 }
 
 fn sendToAllClients(server: *const Server, message: *const ServerToClientMessage) !void {

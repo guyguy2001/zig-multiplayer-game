@@ -1,7 +1,8 @@
 const std = @import("std");
 
-const game_net = @import("game_net.zig");
+const consts = @import("consts.zig");
 const engine = @import("engine.zig");
+const game_net = @import("game_net.zig");
 const utils = @import("utils.zig");
 
 pub const FrameSnapshots = struct {
@@ -84,3 +85,45 @@ pub const SnapshotsBuffer = struct {
         }
     }
 };
+
+pub const HandleIncomingMessagesResult = enum {
+    ok,
+    quit,
+};
+
+pub fn handleIncomingMessages(c: *game_net.Client, frame_number: utils.FrameNumber, time_per_frame: u64) !HandleIncomingMessagesResult {
+    while (frame_number > c.server_frame + consts.frame_buffer_size or (try c.hasMessageWaiting())) {
+        if (!try c.hasMessageWaiting()) {
+            std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ frame_number, c.server_frame });
+        }
+        _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
+            if (err == error.ConnectionResetByPeer or err == error.Timeout) {
+                std.debug.print("Disconnected by peer!\n", .{});
+                return .quit;
+            } else {
+                return err;
+            }
+        };
+        switch (message.type) {
+            .snapshot_part => {
+                try c.server_snapshots.onSnapshotPartReceived(message.message.snapshot_part);
+            },
+            .finished_sending_snapshots => {
+                try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
+                c.server_frame = message.message.finished_sending_snapshots.frame_number;
+            },
+            .input_ack => {
+                const ack = message.message.input_ack;
+                const rtt = frame_number - ack.ack_frame_number;
+                if (frame_number - @divFloor(rtt, 2) > ack.received_during_frame + 10) {
+                    // Sleep half a frame each time we notice we're ahead of the server
+                    std.Thread.sleep(utils.millisToNanos(time_per_frame / 2));
+                }
+
+                std.debug.print("rtt is {d}\n", .{rtt});
+                std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
+            },
+        }
+    }
+    return .ok;
+}

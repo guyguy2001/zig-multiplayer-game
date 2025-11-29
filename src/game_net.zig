@@ -161,6 +161,7 @@ pub const Client = struct {
     id: ClientId,
     socket: posix.socket_t,
     server_address: posix.sockaddr,
+    server_frame: utils.FrameNumber = 0,
     server_snapshots: client_struct.SnapshotsBuffer,
     timeline: simulation.ClientTimeline,
     debug_flags: *debug.DebugFlags,

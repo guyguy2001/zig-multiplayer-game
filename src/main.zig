@@ -3,6 +3,7 @@ const argsParser = @import("args");
 const std = @import("std");
 const rl = @import("raylib");
 
+const consts = @import("consts.zig");
 const debug = @import("debug.zig");
 const engine = @import("engine.zig");
 const simulation = @import("simulation/root.zig");
@@ -10,8 +11,6 @@ const game_net = @import("game_net.zig");
 const server = @import("server.zig");
 const client = @import("client.zig");
 const utils = @import("utils.zig");
-
-const frame_buffer_size = 3;
 
 pub fn main() anyerror!void {
     // Initialization
@@ -85,7 +84,6 @@ pub fn main() anyerror!void {
         std.Thread.sleep(3_000_000);
     }
 
-    var server_frame: u64 = 0;
     // Main game loop
     main_loop: while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // Update
@@ -131,55 +129,17 @@ pub fn main() anyerror!void {
 
             .client => |*c| {
                 const input = engine.Input.fromRaylib();
-                // OK
-                // I think this is what I wanna do:
-                // Whenever I receive a message, add it to the queue in the slot of the correct frame number. Fuck, I might even want this to happen asynchronously.
-                // Whenever it's time to simulate a frame, load that frame from the queue and apply whatever we got there.
-                // Whenever we get a packet for a frame that's already simulated, cry (log error or something)
-                while (world.time.frame_number > server_frame + frame_buffer_size or (try c.hasMessageWaiting())) {
-                    if (!try c.hasMessageWaiting()) {
-                        std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ world.time.frame_number, server_frame });
-                    }
-                    _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
-                        if (err == error.ConnectionResetByPeer) {
-                            std.debug.print("Disconnected by peer!\n", .{});
-                            break :main_loop;
-                        } else {
-                            return err;
-                        }
-                    };
-                    switch (message.type) {
-                        .snapshot_part => {
-                            const part = message.message.snapshot_part;
-                            // TODO: get_mut panics on wrong id, so probably a bad idea?
-                            // TODO: Move this to be when I actually consume that frame
-                            try c.server_snapshots.onSnapshotPartReceived(message.message.snapshot_part);
-                            std.debug.print("Got snapshot part of {}\n", .{part.frame_number});
-                        },
-                        .finished_sending_snapshots => {
-                            try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
-                            server_frame = message.message.finished_sending_snapshots.frame_number;
-                        },
-                        .input_ack => {
-                            const ack = message.message.input_ack;
-                            const rtt = world.time.frame_number - ack.ack_frame_number;
-                            if (world.time.frame_number - @divFloor(rtt, 2) > ack.received_during_frame + 10) {
-                                // Sleep half a frame each time we notice we're ahead of the server
-                                std.Thread.sleep(utils.millisToNanos(@intCast(@divFloor(world.time.time_per_frame, 2))));
-                            }
 
-                            std.debug.print("rtt is {d}\n", .{rtt});
-                            std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
-                        },
-                    }
-
-                    // TODO: make this run only when it should
+                const status = try client.handleIncomingMessages(c, world.time.frame_number, world.time.time_per_frame);
+                if (status == .quit) {
+                    break :main_loop;
                 }
+
                 try game_net.sendInput(c, input, world.time.frame_number);
 
-                if (world.time.frame_number > frame_buffer_size) {
+                if (world.time.frame_number > consts.frame_buffer_size) {
                     // We look 2 frames ago, see timeline.md.
-                    const snapshot_frame = world.time.frame_number - frame_buffer_size;
+                    const snapshot_frame = world.time.frame_number - consts.frame_buffer_size;
                     var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
                     defer snapshots.deinit(c.server_snapshots.gpa);
 

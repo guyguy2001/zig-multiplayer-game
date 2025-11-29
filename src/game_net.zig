@@ -1,5 +1,6 @@
 const std = @import("std");
 const client_struct = @import("client.zig");
+const debug = @import("debug.zig");
 const engine = @import("engine.zig");
 const server_structs = @import("server.zig");
 const simulation = @import("simulation/root.zig");
@@ -115,6 +116,28 @@ pub const Server = struct {
         return _hasMessageWaiting(self.socket);
     }
 
+    pub fn handleMessage(self: *@This(), frame_number: i64, client_address: posix.sockaddr, message: ClientToServerMessage) !void {
+        switch (message.type) {
+            .input => {
+                const input_message = message.message.input;
+                try sendMessageToClient(self.socket, client_address, &ServerToClientMessage{
+                    .type = .input_ack,
+                    .message = .{ .input_ack = InputAckMessage{
+                        .ack_frame_number = input_message.frame_number,
+                        .received_during_frame = frame_number,
+                    } },
+                });
+                try self.input.onInputReceived(input_message);
+            },
+            .connection => {
+                try self.onClientConnected(
+                    client_address,
+                    message.message.connection.client_id,
+                );
+            },
+        }
+    }
+
     pub fn onClientConnected(
         self: *@This(),
         client_address: posix.sockaddr,
@@ -140,6 +163,7 @@ pub const Client = struct {
     server_address: posix.sockaddr,
     server_snapshots: client_struct.SnapshotsBuffer,
     timeline: simulation.ClientTimeline,
+    debug_flags: *debug.DebugFlags,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return _hasMessageWaiting(self.socket);
@@ -227,7 +251,7 @@ pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, Serv
     return .{ address, message };
 }
 
-pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !NetworkState {
+pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug.DebugFlags) !NetworkState {
     const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(socket);
     try posix.setsockopt(
@@ -255,6 +279,7 @@ pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !NetworkState {
         .id = id,
         .server_snapshots = .init(gpa),
         .timeline = .init(gpa),
+        .debug_flags = debug_flags,
     } };
 }
 
@@ -283,6 +308,11 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
 
 pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) !void {
     std.debug.print("F{d} sending input\n", .{frame_number});
+    if (client.debug_flags.outgoing_pl_percent > 0 and utils.randInt(100) < client.debug_flags.outgoing_pl_percent) {
+        std.debug.print("Simulated PL on input :(", .{});
+        return;
+    }
+
     try sendMessageToServer(
         client.socket,
         client.server_address,

@@ -171,3 +171,10 @@ pub fn nanosToMillis(nano: u64) u64 {
 pub fn millisToNanos(milli: u64) u64 {
     return milli * 1000_000;
 }
+
+/// NOTE: this isn't perfectly random, the larger the number the worse this will be
+pub fn randInt(max: u64) u64 {
+    var roll: u64 = undefined;
+    std.posix.getrandom(std.mem.asBytes(&roll)) catch unreachable;
+    return roll % max;
+}

@@ -3,6 +3,7 @@ const argsParser = @import("args");
 const std = @import("std");
 const rl = @import("raylib");
 
+const debug = @import("debug.zig");
 const engine = @import("engine.zig");
 const simulation = @import("simulation/root.zig");
 const game_net = @import("game_net.zig");
@@ -73,11 +74,12 @@ pub fn main() anyerror!void {
     world.state = .game;
     hideMenu(&world);
     spawnGame(&world);
+    var debug_flags = debug.DebugFlags{ .outgoing_pl_percent = 0 };
     var network: game_net.NetworkState =
         (if (is_server)
             try game_net.setupServer(alloc)
         else
-            try game_net.connectToServer(client_id, alloc));
+            try game_net.connectToServer(client_id, alloc, &debug_flags));
     defer network.cleanup();
 
     if (!is_server) {
@@ -110,7 +112,7 @@ pub fn main() anyerror!void {
         world.time.update();
         switch (network) {
             .server => |*s| {
-                while (!(try s.input.isFrameReady(world.time.frame_number)) or (try s.hasMessageWaiting())) {
+                while (try s.hasMessageWaiting()) {
                     const client_address, const message = game_net.serverReceiveMessage(s.socket) catch |err| {
                         if (err == error.ConnectionResetByPeer) {
                             std.debug.print("Disconnected by peer!\n", .{});
@@ -119,31 +121,15 @@ pub fn main() anyerror!void {
                             return err;
                         }
                     };
-
-                    switch (message.type) {
-                        .input => {
-                            const input_message = message.message.input;
-                            try game_net.sendMessageToClient(s.socket, client_address, &game_net.ServerToClientMessage{
-                                .type = .input_ack,
-                                .message = .{ .input_ack = game_net.InputAckMessage{
-                                    .ack_frame_number = input_message.frame_number,
-                                    .received_during_frame = world.time.frame_number,
-                                } },
-                            });
-                            try s.input.onInputReceived(input_message);
-                        },
-                        .connection => {
-                            try s.onClientConnected(
-                                client_address,
-                                message.message.connection.client_id,
-                            );
-                        },
-                    }
+                    try s.handleMessage(world.time.frame_number, client_address, message);
                 }
                 const inputs = try s.input.consumeFrame(world.time.frame_number);
-                var i: u8 = 1;
-                while (i < inputs.list.len) : (i += 1) {
-                    world.input_map[i] = inputs.list[i].?; // TODO: When rebasing on the server, I'll need to extract this to the timeline
+                for (1..inputs.list.len) |i| {
+                    if (inputs.list[i]) |input| {
+                        world.input_map[i] = input;
+                    } else {
+                        std.debug.print("E: Client {d} has no input for frame {d}!\n", .{ i, world.time.frame_number });
+                    }
                 }
 
                 try simulation.simulateServer(&world);
@@ -190,6 +176,7 @@ pub fn main() anyerror!void {
                                 std.Thread.sleep(utils.millisToNanos(@intCast(@divFloor(world.time.time_per_frame, 2))));
                             }
 
+                            std.debug.print("rtt is {d}\n", .{rtt});
                             std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
                         },
                     }
@@ -387,11 +374,11 @@ fn spawnGame(world: *engine.World) void {
     const screen_size = world.screen_size;
     _ = world.entities.spawn(.{
         .position = .{ .x = screen_size.x / 3, .y = screen_size.y / 2 },
-        .speed = 200,
+        .speed = 500,
         .render = .{
             .circle = .{
                 .color = .red,
-                .radius = 50,
+                .radius = 40,
             },
         },
         .tag = .player,
@@ -400,11 +387,11 @@ fn spawnGame(world: *engine.World) void {
     });
     _ = world.entities.spawn(.{
         .position = .{ .x = screen_size.x / 3 * 2, .y = screen_size.y / 2 },
-        .speed = 200,
+        .speed = 500,
         .render = .{
             .circle = .{
                 .color = .red,
-                .radius = 50,
+                .radius = 40,
             },
         },
         .tag = .player,

@@ -11,7 +11,7 @@ pub fn simulateServer(world: *engine.World, input_map: [3]engine.Input) !void {
     movement.moveEnemies(world);
 }
 
-pub fn applySnapshots(timeline: *ClientTimeline, target_frame: i64, snapshots: []engine.EntityDiff) !void {
+pub fn applySnapshots(timeline: *ClientTimeline, target_frame: u64, snapshots: []engine.EntityDiff) !void {
     const world = &(try timeline.at(target_frame)).world;
     for (snapshots) |entity_diff| {
         const entity = world.entities.get_mut(entity_diff.id);
@@ -42,7 +42,7 @@ pub const ClientTimeline = utils.FrameCyclicBuffer(ClientTimelineNode, undefined
 pub fn resimulateFrom(
     timeline: *ClientTimeline,
     client_id: game_net.ClientId,
-    starting_frame: i64,
+    starting_frame: u64,
 ) !engine.World {
     var world = (try timeline.at(starting_frame)).world;
 

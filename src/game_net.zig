@@ -26,23 +26,23 @@ pub const ConnectionMessage = packed struct {
 
 /// A message sent from the client to the server, with the current input state
 pub const InputMessage = packed struct {
-    frame_number: i64,
+    frame_number: u64,
     client_id: ClientId,
     input: engine.Input,
 };
 
 pub const SnapshotPartMessage = packed struct {
-    frame_number: i64,
+    frame_number: u64,
     entity_diff: engine.EntityDiff,
 };
 
 pub const FinishedSendingSnapshotsMessage = packed struct {
-    frame_number: i64,
+    frame_number: u64,
 };
 
 pub const InputAckMessage = packed struct {
-    ack_frame_number: i64,
-    received_during_frame: i64,
+    ack_frame_number: u64,
+    received_during_frame: u64,
 };
 
 pub const ClientToServerMessageType = enum(u8) {
@@ -116,7 +116,7 @@ pub const Server = struct {
         return _hasMessageWaiting(self.socket);
     }
 
-    pub fn handleMessage(self: *@This(), frame_number: i64, client_address: posix.sockaddr, message: ClientToServerMessage) !void {
+    pub fn handleMessage(self: *@This(), frame_number: u64, client_address: posix.sockaddr, message: ClientToServerMessage) !void {
         switch (message.type) {
             .input => {
                 const input_message = message.message.input;
@@ -306,7 +306,7 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
     } };
 }
 
-pub fn sendInput(client: *const Client, input: engine.Input, frame_number: i64) !void {
+pub fn sendInput(client: *const Client, input: engine.Input, frame_number: u64) !void {
     std.debug.print("F{d} sending input\n", .{frame_number});
     if (client.debug_flags.outgoing_pl_percent > 0 and utils.randInt(100) < client.debug_flags.outgoing_pl_percent) {
         std.debug.print("Simulated PL on input :(", .{});

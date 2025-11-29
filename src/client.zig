@@ -50,13 +50,13 @@ pub const SnapshotsBuffer = struct {
         entry.is_done = true;
     }
 
-    pub fn isFrameReady(self: *@This(), frame_number: i64) !bool {
+    pub fn isFrameReady(self: *@This(), frame_number: u64) !bool {
         // TODO: frame_number is always first_frame
         return (try self.list.at(frame_number)).isFull();
     }
 
     // This seems like it's shared between this and ther server's
-    pub fn consumeFrame(self: *@This(), frame_number: i64) !FrameSnapshots {
+    pub fn consumeFrame(self: *@This(), frame_number: u64) !FrameSnapshots {
         // std.debug.print("F{d} Consume\n", .{frame_number});
         if (self.list.first_frame != frame_number) {
             // TODO should this even be a parameter? evidently yes

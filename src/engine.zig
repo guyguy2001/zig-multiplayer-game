@@ -193,11 +193,11 @@ pub const EntitiesIterator = struct {
 };
 
 pub const Time = struct {
-    time_per_frame: i64,
+    time_per_frame: u32,
     game_start_time: i64,
-    frame_number: i64,
+    frame_number: u64,
 
-    pub fn init(time_per_frame: i64) Time {
+    pub fn init(time_per_frame: u32) Time {
         return Time{
             .time_per_frame = time_per_frame,
             .game_start_time = std.time.milliTimestamp(),
@@ -213,7 +213,7 @@ pub const Time = struct {
         self.frame_number += 1;
     }
 
-    pub fn deltaMillis(self: *@This()) i64 {
+    pub fn deltaMillis(self: *@This()) u32 {
         return self.time_per_frame;
     }
 

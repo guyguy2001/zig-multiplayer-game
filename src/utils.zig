@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const FrameNumber = i64;
+pub const FrameNumber = u64;
 
 pub fn pack_type(T: type) type {
     var type_info = @typeInfo(T);
@@ -53,8 +53,8 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
         // invariant: "buff.last.frame" == first_frame + buff.length - 1
         allocator: std.mem.Allocator,
         list: std.DoublyLinkedList,
-        first_frame: i64,
-        len: i64,
+        first_frame: u64,
+        len: u64,
 
         pub fn init(gpa: std.mem.Allocator) Self {
             return Self{
@@ -65,7 +65,7 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
             };
         }
 
-        pub fn extend(self: *Self, frame: i64) !void {
+        pub fn extend(self: *Self, frame: u64) !void {
             while (self.first_frame + self.len <= frame) {
                 if (!allow_empty) {
                     return error.InvalidExtendWithDisallowEmpty;
@@ -80,7 +80,7 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
             }
         }
 
-        pub fn append(self: *Self, data: T, frame: i64) !void {
+        pub fn append(self: *Self, data: T, frame: u64) !void {
             if (self.first_frame + self.len != frame) {
                 std.debug.print("Tried to append frame {d}, but we have frames {d}-{d}\n", .{ frame, self.first_frame, self.first_frame + self.len - 1 });
                 return error.InvalidFrameAppend;
@@ -94,7 +94,7 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
             self.len += 1;
         }
 
-        pub fn at(self: *Self, frame: i64) !*T {
+        pub fn at(self: *Self, frame: u64) !*T {
             if (frame < self.first_frame) {
                 // TODO: Consider retuning null
                 std.debug.print("Tried to access F{d}, valid range is F{d}-F{d}\n", .{ frame, self.first_frame, self.first_frame + self.len });
@@ -117,7 +117,7 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
             return &block.data;
         }
 
-        pub fn dropFrame(self: *Self, frame: i64) *Block {
+        pub fn dropFrame(self: *Self, frame: u64) *Block {
             if (frame != self.first_frame) {
                 unreachable;
             }

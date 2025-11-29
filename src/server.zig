@@ -42,13 +42,13 @@ pub const InputBuffer = struct {
         entry.list[message.client_id.value] = message.input;
     }
 
-    pub fn isFrameReady(self: *@This(), frame_number: i64) !bool {
+    pub fn isFrameReady(self: *@This(), frame_number: u64) !bool {
         // TODO: frame_number is always first_frame
         // TODO: Create const `at` for when I don't want to modify
         return (try self.list.at(frame_number)).isFull();
     }
 
-    pub fn consumeFrame(self: *@This(), frame_number: i64) ![3]engine.Input {
+    pub fn consumeFrame(self: *@This(), frame_number: u64) ![3]engine.Input {
         if (self.list.first_frame != frame_number) {
             unreachable; // TODO should this even be a parameter?
         }
@@ -70,8 +70,8 @@ pub const InputBuffer = struct {
         return self.current_state;
     }
 
-    pub fn numReadyFrames(self: *@This()) !i64 {
-        var result: i64 = 0;
+    pub fn numReadyFrames(self: *@This()) !u64 {
+        var result: u64 = 0;
         for (@intCast(self.list.first_frame)..@intCast(self.list.first_frame + self.list.len)) |frame| {
             if (!try self.isFrameReady(@intCast(frame))) {
                 break;

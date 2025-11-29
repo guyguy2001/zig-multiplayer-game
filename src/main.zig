@@ -85,7 +85,7 @@ pub fn main() anyerror!void {
         std.Thread.sleep(3_000_000);
     }
 
-    var server_frame: i64 = 0;
+    var server_frame: u64 = 0;
     // Main game loop
     main_loop: while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // Update
@@ -163,7 +163,7 @@ pub fn main() anyerror!void {
                         .input_ack => {
                             const ack = message.message.input_ack;
                             const rtt = world.time.frame_number - ack.ack_frame_number;
-                            if (world.time.frame_number - @divFloor(rtt, 2) - 10 > ack.received_during_frame) {
+                            if (world.time.frame_number - @divFloor(rtt, 2) > ack.received_during_frame + 10) {
                                 // Sleep half a frame each time we notice we're ahead of the server
                                 std.Thread.sleep(utils.millisToNanos(@intCast(@divFloor(world.time.time_per_frame, 2))));
                             }

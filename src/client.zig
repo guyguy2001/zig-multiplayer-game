@@ -92,9 +92,10 @@ pub const HandleIncomingMessagesResult = enum {
 };
 
 pub fn handleIncomingMessages(c: *game_net.Client, frame_number: utils.FrameNumber, time_per_frame: u64) !HandleIncomingMessagesResult {
-    while (frame_number > c.server_frame + consts.frame_buffer_size or (try c.hasMessageWaiting())) {
+    while (frame_number > c.snapshot_done_server_frame + consts.frame_buffer_size or (try c.hasMessageWaiting())) {
         if (!try c.hasMessageWaiting()) {
-            std.debug.print("Waiting: Our frame number is {}, server's is {}\n", .{ frame_number, c.server_frame });
+            // TODO: This is bad. the problem that when the latency is high, the snapshots I can expect to be able to use are much older.
+            std.debug.print("Waiting: Our frame number is {}, server's is snap: {}, ack: {}\n", .{ frame_number, c.snapshot_done_server_frame, c.ack_server_frame });
         }
         _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
             if (err == error.ConnectionResetByPeer or err == error.Timeout) {
@@ -110,18 +111,23 @@ pub fn handleIncomingMessages(c: *game_net.Client, frame_number: utils.FrameNumb
             },
             .finished_sending_snapshots => {
                 try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
-                c.server_frame = message.message.finished_sending_snapshots.frame_number;
+                c.snapshot_done_server_frame = message.message.finished_sending_snapshots.frame_number;
             },
             .input_ack => {
                 const ack = message.message.input_ack;
                 const rtt = frame_number - ack.ack_frame_number;
-                if (frame_number - @divFloor(rtt, 2) > ack.received_during_frame + 10) {
+
+                const actual_server_buffer: i64 = @bitCast(ack.ack_frame_number -% ack.received_during_frame);
+
+                // if (frame_number - @divFloor(rtt, 2) > ack.received_during_frame + 10) {
+                if (actual_server_buffer > consts.desired_server_buffer + 1) {
                     // Sleep half a frame each time we notice we're ahead of the server
                     std.Thread.sleep(utils.millisToNanos(time_per_frame / 2));
                 }
 
                 std.debug.print("rtt is {d}\n", .{rtt});
                 std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
+                c.ack_server_frame = ack.received_during_frame;
             },
         }
     }

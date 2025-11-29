@@ -289,7 +289,18 @@ fn drawGame(world: *engine.World, network: *game_net.NetworkState) !void {
                 const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{try s.input.numReadyFrames()});
                 rl.drawText(frame_number_text, 0, 32 * 3, 32, .green);
             },
-            else => {},
+            .client => |*c| {
+                {
+                    var buff = [_]u8{0} ** 20;
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.snapshot_done_server_frame});
+                    rl.drawText(frame_number_text, 0, 32 * 3, 32, .blue);
+                }
+                {
+                    var buff = [_]u8{0} ** 20;
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.ack_server_frame});
+                    rl.drawText(frame_number_text, 0, 32 * 4, 32, .blue);
+                }
+            },
         }
     }
 }

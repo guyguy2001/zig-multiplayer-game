@@ -20,11 +20,11 @@ pub fn movePlayer(world: *engine.World, input: engine.Input, client_id: game_net
     }
 }
 
-pub fn serverMovePlayers(world: *engine.World) void {
+pub fn serverMovePlayers(world: *engine.World, input_map: [3]engine.Input) void {
     var iter = world.entities.iter();
     while (iter.next()) |e| {
         if (e.tag == .player) {
-            const direction = world.input_map[e.network.?.owner_id.value].getDirection();
+            const direction = input_map[e.network.?.owner_id.value].getDirection();
             if (direction.x != 0 or direction.y != 0) {
                 const player = world.entities.get_mut(e.id);
                 const magnitude = world.time.deltaSecs() * player.speed;

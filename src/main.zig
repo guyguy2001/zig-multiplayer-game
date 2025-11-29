@@ -65,7 +65,6 @@ pub fn main() anyerror!void {
         .time = engine.Time.init(1000 / fps),
         .screen_size = rl.Vector2.init(screenWidth, screenHeight),
         .state = .menu,
-        .input_map = [_]engine.Input{.empty()} ** 3,
     };
 
     rl.setTargetFPS(120);
@@ -124,15 +123,8 @@ pub fn main() anyerror!void {
                     try s.handleMessage(world.time.frame_number, client_address, message);
                 }
                 const inputs = try s.input.consumeFrame(world.time.frame_number);
-                for (1..inputs.list.len) |i| {
-                    if (inputs.list[i]) |input| {
-                        world.input_map[i] = input;
-                    } else {
-                        std.debug.print("E: Client {d} has no input for frame {d}!\n", .{ i, world.time.frame_number });
-                    }
-                }
 
-                try simulation.simulateServer(&world);
+                try simulation.simulateServer(&world, inputs);
                 try game_net.sendSnapshots(s, &world);
                 try debugServerState(s);
             },

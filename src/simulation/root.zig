@@ -6,8 +6,8 @@ const utils = @import("../utils.zig");
 
 const movement = @import("movement.zig");
 
-pub fn simulateServer(world: *engine.World) !void {
-    movement.serverMovePlayers(world);
+pub fn simulateServer(world: *engine.World, input_map: [3]engine.Input) !void {
+    movement.serverMovePlayers(world, input_map);
     movement.moveEnemies(world);
 }
 

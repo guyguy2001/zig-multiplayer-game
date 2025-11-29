@@ -1,10 +1,11 @@
+const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const std = @import("std");
 const utils = @import("utils.zig");
 const game_net = @import("game_net.zig");
 const posix = std.posix;
 
-const PlayerList = struct {
+const PlayersInput = struct {
     list: [3]?engine.Input,
 
     pub fn isFull(self: *@This()) bool {
@@ -18,8 +19,8 @@ const PlayerList = struct {
         return true;
     }
 
-    pub fn empty() PlayerList {
-        return PlayerList{
+    pub fn empty() PlayersInput {
+        return PlayersInput{
             .list = [_]?engine.Input{null} ** 3,
         };
     }
@@ -27,7 +28,9 @@ const PlayerList = struct {
 
 /// Holds the inputs of the players from every as-of-yet unstimulated frame.
 pub const InputBuffer = struct {
-    list: utils.FrameCyclicBuffer(PlayerList, .empty(), true),
+    list: utils.FrameCyclicBuffer(PlayersInput, .empty(), true),
+    current_state: [3]engine.Input,
+    last_seen: [3]utils.FrameNumber,
 
     pub fn onInputReceived(self: *@This(), message: game_net.InputMessage) !void {
         // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });
@@ -45,14 +48,26 @@ pub const InputBuffer = struct {
         return (try self.list.at(frame_number)).isFull();
     }
 
-    pub fn consumeFrame(self: *@This(), frame_number: i64) !PlayerList {
+    pub fn consumeFrame(self: *@This(), frame_number: i64) ![3]engine.Input {
         if (self.list.first_frame != frame_number) {
             unreachable; // TODO should this even be a parameter?
         }
-        const result = (try self.list.at(frame_number)).*;
+        const inputs = (try self.list.at(frame_number)).*;
         const block = self.list.dropFrame(frame_number);
         self.list.freeBlock(block);
-        return result;
+
+        for (1..inputs.list.len) |i| {
+            if (inputs.list[i]) |input| {
+                self.current_state[i] = input;
+                self.last_seen[i] = frame_number;
+            } else {
+                std.debug.print("E: Client {d} has no input for frame {d}!\n", .{ i, frame_number });
+                if (frame_number - self.last_seen[i] > consts.stop_holding_input_threshold) {
+                    self.current_state[i] = engine.Input.empty();
+                }
+            }
+        }
+        return self.current_state;
     }
 
     pub fn numReadyFrames(self: *@This()) !i64 {
@@ -69,6 +84,8 @@ pub const InputBuffer = struct {
     pub fn init(gpa: std.mem.Allocator) InputBuffer {
         return InputBuffer{
             .list = .init(gpa),
+            .current_state = [_]engine.Input{.empty()} ** 3,
+            .last_seen = [_]utils.FrameNumber{0} ** 3,
         };
     }
 

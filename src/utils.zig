@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const FrameNumber = i64;
+
 pub fn pack_type(T: type) type {
     var type_info = @typeInfo(T);
     switch (type_info) {

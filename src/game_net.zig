@@ -341,8 +341,10 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
     var iter = world.entities.iter();
     std.debug.print("Sending frame {}\n", .{world.time.frame_number});
     while (iter.next()) |entity| {
-        // TODO: Periodically send position in case of PL
-        if (world.entities.modified_this_frame[entity.id.index] and entity.network != null) {
+        if (@mod(world.time.frame_number, 20) == 0 or // Periodically send positions in case of PL
+            // Otherwise, only change modified entities
+            world.entities.modified_this_frame[entity.id.index] and entity.network != null)
+        {
             try sendToAllClients(server, &ServerToClientMessage{
                 .type = .snapshot_part,
                 .message = .{ .snapshot_part = SnapshotPartMessage{

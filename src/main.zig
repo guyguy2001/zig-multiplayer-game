@@ -47,7 +47,7 @@ pub fn main() anyerror!void {
             else => {},
         }
     } else {
-        rl.setWindowPosition(screenWidth / 2, @intFromFloat(screenHeight * 1.25));
+        rl.setWindowPosition(screenWidth / 2, @intFromFloat(screenHeight * 1.1));
     }
     defer rl.closeWindow(); // Close window and OpenGL context
 
@@ -80,7 +80,7 @@ pub fn main() anyerror!void {
     defer network.cleanup();
 
     if (!is_server) {
-        std.Thread.sleep(3_000_000);
+        std.Thread.sleep(utils.millisToNanos(250));
     }
 
     // Main game loop
@@ -265,30 +265,25 @@ fn drawGame(world: *engine.World, network: *game_net.NetworkState) !void {
         rl.drawFPS(0, 0);
         {
             var buff = [_]u8{0} ** 20;
-            const drift_text = try std.fmt.bufPrintZ(&buff, "{d}", .{world.time.getDrift()});
-            rl.drawText(drift_text, 0, 32, 32, .black);
-        }
-        {
-            var buff = [_]u8{0} ** 20;
             const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{world.time.frame_number});
-            rl.drawText(frame_number_text, 0, 32 * 2, 32, .black);
+            rl.drawText(frame_number_text, 0, 32 * 1, 32, .black);
         }
         switch (network.*) {
             .server => |*s| {
-                var buff = [_]u8{0} ** 20;
-                const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{try s.input.numReadyFrames()});
-                rl.drawText(frame_number_text, 0, 32 * 3, 32, .green);
+                {
+                    var buff = [_]u8{0} ** 20;
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{try s.input.numReadyFrames()});
+                    rl.drawText(frame_number_text, 0, 32 * 2, 32, .green);
+                }
+                {
+                    rl.drawText("Server", @as(i32, @intFromFloat(world.screen_size.x / 3)), 32 * 1, 64, .black);
+                }
             },
             .client => |*c| {
                 {
                     var buff = [_]u8{0} ** 20;
-                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.ack_server_frame});
-                    rl.drawText(frame_number_text, 0, 32 * 3, 32, .blue);
-                }
-                {
-                    var buff = [_]u8{0} ** 20;
-                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.simulation_speed_multiplier});
-                    rl.drawText(frame_number_text, 0, 32 * 4, 32, .blue);
+                    const client_text = try std.fmt.bufPrintZ(&buff, "Client {d}", .{c.id.value});
+                    rl.drawText(client_text, @as(i32, @intFromFloat(world.screen_size.x / 3)), 32 * 1, 64, .black);
                 }
             },
         }

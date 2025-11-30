@@ -68,6 +68,7 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
         pub fn extend(self: *Self, frame: u64) !void {
             while (self.first_frame + self.len <= frame) {
                 if (!allow_empty) {
+                    std.debug.print("Tried to access frame {d}, only have {d}-{d}\n", .{ frame, self.first_frame, self.first_frame + self.len - 1 });
                     return error.InvalidExtendWithDisallowEmpty;
                 }
                 const block = try self.allocator.create(Block);

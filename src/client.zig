@@ -39,6 +39,11 @@ pub const SnapshotsBuffer = struct {
     }
 
     pub fn onSnapshotPartReceived(self: *@This(), part: game_net.SnapshotPartMessage) !void {
+        // Mark all previous frames as done, even if the "done" message hadn't arrived
+        for (self.list.first_frame..part.frame_number) |frame| {
+            (try self.list.at(frame)).is_done = true;
+        }
+
         var entry = self.list.at(part.frame_number) catch |err| {
             std.debug.print("client: Failure at `at` - {}\n", .{err});
             // TODO: Why do I even catch here?
@@ -98,8 +103,7 @@ pub const HandleIncomingMessagesResult = enum {
     quit,
 };
 
-pub fn handleIncomingMessages(c: *game_net.Client, frame_number: utils.FrameNumber, time_per_frame: u64) !HandleIncomingMessagesResult {
-    _ = frame_number;
+pub fn handleIncomingMessages(c: *game_net.Client) !HandleIncomingMessagesResult {
     while (try c.hasMessageWaiting()) {
         _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
             if (err == error.ConnectionResetByPeer or err == error.Timeout) {
@@ -119,24 +123,33 @@ pub fn handleIncomingMessages(c: *game_net.Client, frame_number: utils.FrameNumb
             },
             .input_ack => {
                 const ack = message.message.input_ack;
-                // const rtt = frame_number - ack.ack_frame_number;
-
-                const actual_server_buffer: i64 = @bitCast(ack.ack_frame_number -% ack.received_during_frame);
-
-                // if (frame_number - @divFloor(rtt, 2) > ack.received_during_frame + 10) {
-                if (actual_server_buffer > consts.desired_server_buffer + 1) {
-                    // Sleep half a frame each time we notice we're ahead of the server
-                    std.Thread.sleep(utils.millisToNanos(time_per_frame / 2));
-                }
-                if (actual_server_buffer > consts.desired_server_buffer * 2 + 1) {
-                    // Starting to get bad
-                    std.Thread.sleep(utils.millisToNanos(time_per_frame * 2));
-                }
-
-                // std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
+                c.simulation_speed_multiplier = calculateNeededSimulationSpeed(ack);
                 c.ack_server_frame = ack.received_during_frame;
+                // std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
             },
         }
     }
     return .ok;
+}
+
+fn calculateNeededSimulationSpeed(ack: game_net.InputAckMessage) f32 {
+    // Howmany frames the server has
+    const actual_server_buffer: i64 = @bitCast(ack.ack_frame_number -% ack.received_during_frame);
+
+    const buffer_error: f32 = @floatFromInt(actual_server_buffer - consts.desired_server_buffer);
+
+    var calculated_multiplier: f32 = 1.0 - (buffer_error * consts.simulation_speed.speedup_intensity);
+
+    // Clamp the result to safe bounds to prevent runaway speeds
+    calculated_multiplier = @max(
+        @min(calculated_multiplier, consts.simulation_speed.max_speedup),
+        consts.simulation_speed.max_slowdown,
+    );
+
+    // If the state is relatively good, prefer running at the same speed as the server
+    if (@abs(buffer_error) <= 1) {
+        return 1.0;
+    } else {
+        return calculated_multiplier;
+    }
 }

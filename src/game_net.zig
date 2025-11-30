@@ -163,8 +163,10 @@ pub const Client = struct {
     server_address: posix.sockaddr,
     ack_server_frame: utils.FrameNumber = 0,
     snapshot_done_server_frame: utils.FrameNumber = 0,
+    simulation_speed_multiplier: f32 = 1,
     server_snapshots: client_struct.SnapshotsBuffer,
     timeline: simulation.ClientTimeline,
+    last_frame_nanos: ?i128 = null,
     debug_flags: *debug.DebugFlags,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {

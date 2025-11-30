@@ -37,7 +37,6 @@ pub fn main() anyerror!void {
 
     const screenWidth = 800;
     const screenHeight = 450;
-    const fps = 60;
 
     rl.setTraceLogLevel(.none);
     rl.initWindow(screenWidth, screenHeight, "raylib-zig [core] example - basic window");
@@ -61,14 +60,14 @@ pub fn main() anyerror!void {
             .modified_this_frame = [_]bool{false} ** 100,
             .next_id = 0x00,
         },
-        .time = engine.Time.init(1000 / fps),
+        .time = engine.Time.init(1000 / consts.simulation_speed.regular_fps),
         .screen_size = rl.Vector2.init(screenWidth, screenHeight),
         .state = .menu,
     };
 
+    // Raylib simulates much faster than us, we handle sleeping to match our desired FPS
     rl.setTargetFPS(120);
 
-    // TODO: add a menu back to the game, maybe allow via build/commandline options to skip it
     world.state = .game;
     hideMenu(&world);
     spawnGame(&world);
@@ -88,24 +87,28 @@ pub fn main() anyerror!void {
     main_loop: while (!rl.windowShouldClose()) { // Detect window close button or ESC key
         // Update
         //----------------------------------------------------------------------------------
-        // TODO: Update your variables here
-        //----------------------------------------------------------------------------------
         switch (network) {
             .server => if (world.time.getDrift() < 0) {
-                // TODO: This probably conflicts with the "waiting for server" logic
                 const to_sleep: u64 = utils.millisToNanos(@intFromFloat(
                     world.time.getDrift() * -1 * @as(f32, @floatFromInt(world.time.time_per_frame)),
                 ));
                 std.Thread.sleep(to_sleep);
             },
-            else => {},
+            .client => |*c| {
+                const time_per_frame: u64 = utils.millisToNanos(@intFromFloat(@as(f32, @floatFromInt(world.time.time_per_frame)) / c.simulation_speed_multiplier));
+
+                const now = std.time.nanoTimestamp();
+                if (c.last_frame_nanos == null) {
+                    c.last_frame_nanos = now;
+                }
+                std.Thread.sleep(time_per_frame - @min(
+                    time_per_frame,
+                    @as(u64, @intCast(now - c.last_frame_nanos.?)),
+                ));
+                c.last_frame_nanos = std.time.nanoTimestamp();
+            },
         }
 
-        // switch (world.state) {
-        //     .menu => {
-        //         unreachable;
-        //     },
-        //     .game => {
         world.time.update();
         switch (network) {
             .server => |*s| {
@@ -130,7 +133,7 @@ pub fn main() anyerror!void {
             .client => |*c| {
                 const input = engine.Input.fromRaylib();
 
-                const status = try client.handleIncomingMessages(c, world.time.frame_number, world.time.time_per_frame);
+                const status = try client.handleIncomingMessages(c);
                 if (status == .quit) {
                     break :main_loop;
                 }
@@ -138,39 +141,38 @@ pub fn main() anyerror!void {
                 try game_net.sendInput(c, input, world.time.frame_number);
 
                 while (c.server_snapshots.len() > 0 and try c.server_snapshots.isFrameReady(c.server_snapshots.firstFrame())) {
-                    // We look 2 frames ago, see timeline.md.
+                    // Look at the first snapshot (frame n-k), apply it to frame n-k in the timeline,
+                    // then re-simulate frames n-k+1 to n-1, inclusive.
+
                     const snapshot_frame = c.server_snapshots.firstFrame();
+                    if (snapshot_frame >= world.time.frame_number - 1) {
+                        break;
+                    }
                     var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
                     defer snapshots.deinit(c.server_snapshots.gpa);
 
                     if (!snapshots.is_done) {
                         std.debug.print("W: F{d} snapshots aren't done\n", .{snapshot_frame});
                     }
+
+                    // Modify the world of frame n-k
                     const snapshotList = snapshots.snapshots.items;
-                    // == Update rest of the world to frame 101, rebase myself (102-110) on top of 101
-
-                    // For current frame - apply the rest of the worlds' frame 101 to our 111
-                    // try simulation.applyRemoteEntitiesSnapshots(&world, client_id, snapshotList);
                     try simulation.applySnapshots(&c.timeline, snapshot_frame, snapshotList);
+                    // now n-k is guranteed to be correct (aside from snapshot PL)
 
-                    // For myself - go back 10 frames to my 101, update myself, rebase from there
+                    // Resimulate frames n-k+1 to n-1
                     const time_before = world.time.frame_number;
                     world = try simulation.resimulateFrom(&c.timeline, client_id, snapshot_frame);
                     if (time_before != world.time.frame_number) {
-                        std.debug.print("Mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
+                        std.debug.print("Time mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
                         unreachable;
                     }
                     c.timeline.freeBlock(c.timeline.dropFrame(snapshot_frame));
-                    // now my 111 is updated with knowledge of my authoritative position of 101
-
-                    // Now we have authoritative state of 101, slightly better state for 102 onwards
-                    // Simulates myself for frame 111
+                    // Now frame n-1 is updated with knowledge of my authoritative position of n-k
                 }
+                // Simulate frame n
                 try simulation.simulateClient(&world, input, client_id);
 
-                // TODO: Make sure this needs to sit here, after everything. If this is saved to frame number 111,
-                // I think the important question is: what will be in the packet the server sends as 111?
-                // Will it be this state, after simulating the input, or pre?
                 try c.timeline.append(
                     simulation.ClientTimelineNode{
                         .world = world,
@@ -181,29 +183,25 @@ pub fn main() anyerror!void {
             },
         }
         // std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
-        // },
-        // }
 
         // Draw
         try drawGame(&world, &network);
 
         // Cleanup
-        //----------------------------------------------------------------------------------
         world.entities.modified_this_frame = .{false} ** world.entities.modified_this_frame.len;
-        //----------------------------------------------------------------------------------
     }
 }
 
 fn debugClientState(c: *game_net.Client) void {
-    std.debug.print("START !!!!!!!!!!\n", .{});
+    std.debug.print("==== Timeline Start =====\n", .{});
     {
         var frame_number = c.timeline.first_frame;
         while (frame_number < c.timeline.first_frame + c.timeline.len) : (frame_number += 1) {
             const my_world = (try c.timeline.at(frame_number)).world;
-            std.debug.print("POS: {}\n", .{my_world.time.frame_number});
+            std.debug.print("position: {}\n", .{my_world.time.frame_number});
         }
     }
-    std.debug.print("MID !!!!!!!!!!\n", .{});
+    std.debug.print("===== Timeline End / Snapshots Start ===== \n", .{});
     {
         var frame_number = c.server_snapshots.list.first_frame;
         while (frame_number < c.server_snapshots.list.first_frame + c.server_snapshots.list.len) : (frame_number += 1) {
@@ -211,11 +209,11 @@ fn debugClientState(c: *game_net.Client) void {
             std.debug.print("snapshots: {any}\n", .{snapshot.snapshots.items});
         }
     }
-    std.debug.print("END !!!!!!!!!!\n", .{});
+    std.debug.print("===== Snapshots End ===== \n", .{});
 }
 
 fn debugServerState(s: *game_net.Server) !void {
-    std.debug.print("START !!!!!!!!!!\n", .{});
+    std.debug.print("==== Inputs Start ===== \n", .{});
     {
         var frame_number = s.input.list.first_frame;
         while (frame_number < s.input.list.first_frame + s.input.list.len) : (frame_number += 1) {
@@ -223,15 +221,7 @@ fn debugServerState(s: *game_net.Server) !void {
             std.debug.print("inputs: {}\n", .{inputs});
         }
     }
-    std.debug.print("MID !!!!!!!!!!\n", .{});
-    // {
-    //     var frame_number = s.server_snapshots.list.first_frame;
-    //     while (frame_number < s.server_snapshots.list.first_frame + s.server_snapshots.list.len) : (frame_number += 1) {
-    //         const snapshot = try s.server_snapshots.list.at(frame_number);
-    //         std.debug.print("snapshots: {any}\n", .{snapshot.snapshots.items});
-    //     }
-    // }
-    // std.debug.print("END !!!!!!!!!!\n", .{});
+    std.debug.print("===== Inputs End ===== \n", .{});
 }
 
 fn drawGame(world: *engine.World, network: *game_net.NetworkState) !void {
@@ -292,12 +282,12 @@ fn drawGame(world: *engine.World, network: *game_net.NetworkState) !void {
             .client => |*c| {
                 {
                     var buff = [_]u8{0} ** 20;
-                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.snapshot_done_server_frame});
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.ack_server_frame});
                     rl.drawText(frame_number_text, 0, 32 * 3, 32, .blue);
                 }
                 {
                     var buff = [_]u8{0} ** 20;
-                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.ack_server_frame});
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.simulation_speed_multiplier});
                     rl.drawText(frame_number_text, 0, 32 * 4, 32, .blue);
                 }
             },

@@ -11,6 +11,7 @@ const port = 12348;
 const server_address = std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, port);
 // We use ms because this is how it's defined in winsock - https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-setsockopt
 const default_socket_timeout_ms: std.os.windows.DWORD = 2000;
+const max_connection_attempts = 3;
 
 pub const ClientId = packed struct {
     value: u8,
@@ -29,6 +30,10 @@ pub const InputMessage = packed struct {
     frame_number: u64,
     client_id: ClientId,
     input: engine.Input,
+};
+
+pub const ConnectionAckMessage = packed struct {
+    frame_number: utils.FrameNumber,
 };
 
 pub const SnapshotPartMessage = packed struct {
@@ -68,6 +73,7 @@ pub const ClientToServerMessage = packed struct {
 };
 
 pub const ServerToClientMessageType = enum(u8) {
+    connection_ack = 16,
     snapshot_part = 17,
     finished_sending_snapshots = 18,
     input_ack = 19,
@@ -76,6 +82,7 @@ pub const ServerToClientMessageType = enum(u8) {
 pub const ServerToClientMessage = packed struct {
     type: ServerToClientMessageType,
     message: packed union {
+        connection_ack: ConnectionAckMessage,
         snapshot_part: SnapshotPartMessage,
         finished_sending_snapshots: FinishedSendingSnapshotsMessage,
         input_ack: InputAckMessage,
@@ -84,6 +91,7 @@ pub const ServerToClientMessage = packed struct {
     pub fn sizeOf(self: *const @This()) usize {
         const prefix_size = @bitSizeOf(@TypeOf(self.type));
         const payload_size: usize = switch (self.type) {
+            .connection_ack => @bitSizeOf(ConnectionAckMessage),
             .snapshot_part => @bitSizeOf(SnapshotPartMessage),
             .finished_sending_snapshots => @bitSizeOf(FinishedSendingSnapshotsMessage),
             .input_ack => @bitSizeOf(InputAckMessage),
@@ -133,6 +141,7 @@ pub const Server = struct {
                 try self.onClientConnected(
                     client_address,
                     message.message.connection.client_id,
+                    frame_number,
                 );
             },
         }
@@ -142,6 +151,7 @@ pub const Server = struct {
         self: *@This(),
         client_address: posix.sockaddr,
         client_id: ClientId,
+        frame_number: utils.FrameNumber,
     ) !void {
         if (client_id.value >= self.client_addresses.len) {
             std.debug.print("Client connected with id {d}, which is out of range!", .{client_id.value});
@@ -149,6 +159,12 @@ pub const Server = struct {
         }
         std.debug.print("Client {d} connected!\n", .{client_id.value});
         self.client_addresses[client_id.value] = client_address;
+        try sendMessageToClient(self.socket, client_address, &ServerToClientMessage{
+            .type = .connection_ack,
+            .message = .{ .connection_ack = ConnectionAckMessage{
+                .frame_number = frame_number,
+            } },
+        });
     }
 
     pub fn deinit(self: *@This()) void {
@@ -252,7 +268,37 @@ pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, Serv
     return .{ address, message };
 }
 
-pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug.DebugFlags) !NetworkState {
+fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, client_id: ClientId) !?ConnectionAckMessage {
+    for (0..max_connection_attempts) |_| {
+        try sendMessageToServer(
+            socket,
+            target_address.any,
+            &ClientToServerMessage{
+                .type = .connection,
+                .message = .{ .connection = ConnectionMessage{
+                    .client_id = client_id,
+                } },
+            },
+        );
+
+        _, const message = clientReceiveMessage(socket) catch |e| {
+            if (e == error.Timeout or e == error.ConnectionResetByPeer) {
+                std.Thread.sleep(utils.millisToNanos(250));
+                continue;
+            }
+            return e;
+        };
+
+        if (message.type != .connection_ack) {
+            std.debug.print("W: Got wrong message! {d}\n", .{message.type});
+            return null;
+        }
+        return message.message.connection_ack;
+    }
+    return error.ConnectionFailedAfterManyAttempts;
+}
+
+pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug.DebugFlags) !struct { NetworkState, utils.FrameNumber } {
     const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(socket);
     try posix.setsockopt(
@@ -263,25 +309,24 @@ pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug
     );
 
     try posix.connect(socket, &server_address.any, server_address.getOsSockLen());
-    try sendMessageToServer(
-        socket,
-        server_address.any,
-        &ClientToServerMessage{
-            .type = .connection,
-            .message = .{ .connection = ConnectionMessage{
-                .client_id = id,
-            } },
-        },
-    );
+    const message = try tryConnectInLoop(socket, server_address, id);
 
-    return NetworkState{ .client = Client{
-        .socket = socket,
-        .server_address = server_address.any,
-        .id = id,
-        .server_snapshots = .init(gpa),
-        .timeline = .init(gpa),
-        .debug_flags = debug_flags,
-    } };
+    const frame_number = if (message) |msg| msg.frame_number else 0;
+    var timeline: simulation.ClientTimeline = .init(gpa);
+    std.debug.print("First frame {d}\n", .{frame_number});
+    timeline.first_frame = frame_number + 1;
+
+    return .{
+        NetworkState{ .client = Client{
+            .socket = socket,
+            .server_address = server_address.any,
+            .id = id,
+            .server_snapshots = .init(gpa),
+            .timeline = timeline,
+            .debug_flags = debug_flags,
+        } },
+        frame_number,
+    };
 }
 
 pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {

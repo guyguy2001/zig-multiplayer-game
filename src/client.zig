@@ -127,6 +127,9 @@ pub fn handleIncomingMessages(c: *game_net.Client) !HandleIncomingMessagesResult
                 c.ack_server_frame = ack.received_during_frame;
                 // std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
             },
+            .connection_ack => {
+                std.debug.print("W: Received connection ack late into the game", .{});
+            },
         }
     }
     return .ok;

@@ -72,12 +72,14 @@ pub fn main() anyerror!void {
     hideMenu(&world);
     spawnGame(&world);
     var debug_flags = debug.DebugFlags{ .outgoing_pl_percent = 0 };
-    var network: game_net.NetworkState =
+    var network: game_net.NetworkState, const starting_frame_numer: utils.FrameNumber =
         (if (is_server)
-            try game_net.setupServer(alloc)
+            .{ try game_net.setupServer(alloc), 0 }
         else
             try game_net.connectToServer(client_id, alloc, &debug_flags));
     defer network.cleanup();
+
+    world.time.frame_number = starting_frame_numer;
 
     if (!is_server) {
         std.Thread.sleep(utils.millisToNanos(250));
@@ -150,6 +152,16 @@ pub fn main() anyerror!void {
                     }
                     var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
                     defer snapshots.deinit(c.server_snapshots.gpa);
+
+                    if (snapshot_frame < starting_frame_numer) {
+                        // Disregard snapshots from before we connected;
+                        continue;
+                    }
+
+                    if (snapshot_frame < c.timeline.first_frame) {
+                        std.debug.print("Snapshot frame {d} not present in timeline {d}+\n", .{ snapshot_frame, c.timeline.first_frame });
+                        continue;
+                    }
 
                     if (!snapshots.is_done) {
                         std.debug.print("W: F{d} snapshots aren't done\n", .{snapshot_frame});

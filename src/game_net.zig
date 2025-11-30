@@ -229,13 +229,11 @@ pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, Clie
 
     const len = try posix.recvfrom(sock, @ptrCast(&message), 0, &address, &addrlen);
     if (len < 2) {
-        @panic("AAHHHHHHHHHHH");
+        @panic("Received too small of a message");
     }
-    // TODO: assert received type makes sense and whatnot
     if (len != message.sizeOf()) {
-        @panic("AHH2");
+        @panic("Message has incorrect size");
     }
-    // TODO: assert received len == sizeof
     return .{ address, message };
 }
 
@@ -246,12 +244,11 @@ pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, Serv
 
     const len = try posix.recvfrom(sock, @ptrCast(&message), 0, &address, &addrlen);
     if (len < 2) {
-        @panic("AAHHHHHHHHHHH");
+        @panic("Received too small of a message");
     }
     if (len != message.sizeOf()) {
-        @panic("AHH2");
+        @panic("Message has incorrect size");
     }
-    // TODO: assert received len == sizeof
     return .{ address, message };
 }
 

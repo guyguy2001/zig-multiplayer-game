@@ -16,33 +16,43 @@ pub const ClientId = packed struct {
     }
 };
 
+/// Client->Server: A message asking to be connected, and to use the specified client-id.
 pub const ConnectionMessage = packed struct {
     client_id: ClientId,
 };
 
-/// A message sent from the client to the server, with the current input state
-pub const InputMessage = packed struct {
-    frame_number: u64,
-    client_id: ClientId,
-    input: Input,
-};
-
+/// Server->Client: A message acknoledging the connection,
+/// and updating the client with the current frame number.
 pub const ConnectionAckMessage = packed struct {
     frame_number: FrameNumber,
 };
 
+/// Client->Server: A message containing the pressed inputs for the given frame.
+pub const InputMessage = packed struct {
+    frame_number: FrameNumber,
+    client_id: ClientId,
+    input: Input,
+};
+
+/// Server->Client: A message acknoledging the received input,
+/// with metadata about when the input was sent and received, for the sake of synchronization.
+/// Currently unused for input reliability.
+pub const InputAckMessage = packed struct {
+    ack_frame_number: FrameNumber,
+    received_during_frame: FrameNumber,
+};
+
+/// Server->Client: A message containing the updated state of a single entity.
+/// Part of the process of sending a snapshot from the server to the client.
 pub const SnapshotPartMessage = packed struct {
-    frame_number: u64,
+    frame_number: FrameNumber,
     entity_diff: EntityDiff,
 };
 
+/// Server->Client: A message signifying the end of
+/// the snapshot sending process for the given frame.
 pub const FinishedSendingSnapshotsMessage = packed struct {
-    frame_number: u64,
-};
-
-pub const InputAckMessage = packed struct {
-    ack_frame_number: u64,
-    received_during_frame: u64,
+    frame_number: FrameNumber,
 };
 
 pub const ClientToServerMessageType = enum(u8) {

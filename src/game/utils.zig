@@ -2,9 +2,22 @@ const std = @import("std");
 
 pub const FrameNumber = u64;
 
-// This currently uses an allocation-based linked list, while the implementation I actually want
-// would be with a fixed-sized buffer, as part of the point of this struct
-// is for cases where I'm expecting a fixed amount of messages at a time.
+/// A queue of frames, in sequence. The queue is supposed to remain at roughly a fixed size,
+/// with frames being dequeued as often as they're queued.
+///
+/// `T` is the type of the elements of the buffer.
+///
+/// When `allow_empty` is true, accessing a "future" frame enqueue all
+/// frames between the last queued farme and it, inclusive, and uses the value of `empty_value`.
+/// When it is false, new frames must be added manually, with a specified value.
+///
+/// If `allow_empty` is true, `empty_value` is the value that's enqueued when skipping frames,
+/// or when accessing the next one.
+/// If it is false, then `empty_value` is unused, and should be set to `undefined`.
+///
+/// Currently, the implementation uses a linked list - in the future,
+/// I plan to move to a fixed-size buffer,as we can define during compilation
+/// the maximum number of frames we need to look ahead/behind for each case.
 pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime allow_empty: bool) type {
     return struct {
         const Self = @This();
@@ -12,9 +25,14 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
         const Block = struct {
             node: std.DoublyLinkedList.Node,
             data: T,
+
+            /// Returns a pointer to the `Block` the given `node` is part of -
+            /// the way to accessing a `Block` from the linked list.
+            pub fn from_node(node: *std.DoublyLinkedList.Node) *Block {
+                return @alignCast(@fieldParentPtr("node", node));
+            }
         };
 
-        // invariant: "buff.last.frame" == first_frame + buff.length - 1
         allocator: std.mem.Allocator,
         list: std.DoublyLinkedList,
         first_frame: u64,
@@ -78,7 +96,7 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
                 curr = curr.next.?;
             }
 
-            const block: *Block = @alignCast(@fieldParentPtr("node", curr));
+            const block = Block.from_node(curr);
             return &block.data;
         }
 
@@ -86,10 +104,8 @@ pub fn FrameCyclicBuffer(comptime T: type, comptime empty_value: T, comptime all
             if (frame != self.first_frame) {
                 unreachable;
             }
-            // TODO: Merge these 2 lines:
-            const first = self.list.first.?;
-            _ = self.list.popFirst();
-            const block: *Block = @alignCast(@fieldParentPtr("node", first));
+            const first = self.list.popFirst().?;
+            const block = Block.from_node(first);
             self.len -= 1;
             self.first_frame += 1;
             return block;
@@ -137,12 +153,4 @@ pub fn nanosToMillis(nano: u64) u64 {
 
 pub fn millisToNanos(milli: u64) u64 {
     return milli * 1000_000;
-}
-
-/// NOTE: this isn't perfectly random, the larger the number
-/// the worse the randomness will be on average
-pub fn randInt(max: u64) u64 {
-    var roll: u64 = undefined;
-    std.posix.getrandom(std.mem.asBytes(&roll)) catch unreachable;
-    return roll % max;
 }

@@ -26,6 +26,7 @@ pub const Server = struct {
     socket: posix.socket_t,
     client_addresses: [3]?posix.sockaddr,
     // TODO: Is it a good idea for this to also contain gameplay-logic-structs such as these?
+    // i.e. should I split it to ServerNetwork and ServerState?
     input: server_structs.InputBuffer,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
@@ -271,11 +272,6 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
 
 pub fn sendInput(client: *const Client, input: engine.Input, frame_number: u64) !void {
     // std.debug.print("F{d} sending input\n", .{frame_number});
-    if (client.debug_flags.outgoing_pl_percent > 0 and utils.randInt(100) < client.debug_flags.outgoing_pl_percent) {
-        std.debug.print("Simulated PL on input :(", .{});
-        return;
-    }
-
     try sendMessageToServer(
         client.socket,
         client.server_address,

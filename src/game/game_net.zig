@@ -128,7 +128,11 @@ pub const NetworkState = union(NetworkRole) {
     }
 };
 
-pub fn sendMessageToServer(sock: posix.socket_t, address: posix.sockaddr, message: *const net.protocol.ClientToServerMessage) !void {
+pub fn sendMessageToServer(
+    sock: posix.socket_t,
+    address: posix.sockaddr,
+    message: *const net.protocol.ClientToServerMessage,
+) !void {
     const ptr = @as([]const u8, @ptrCast(message))[0..message.sizeOf()];
 
     _ = try posix.sendto(
@@ -156,8 +160,8 @@ pub fn sendMessageToClient(
     );
 }
 
-pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.protocol.ClientToServerMessage } {
-    var message: net.protocol.ClientToServerMessage = undefined;
+fn _receiveMessage(T: type, sock: posix.socket_t) !struct { posix.sockaddr, T } {
+    var message: T = undefined;
     var address: posix.sockaddr = undefined;
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
 
@@ -165,6 +169,7 @@ pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.
     if (len < 2) {
         @panic("Received too small of a message");
     }
+    // TODO: add validation that the id is of the enum. Maybe further validations for the payload
     if (len != message.sizeOf()) {
         @panic("Message has incorrect size");
     }
@@ -172,18 +177,11 @@ pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.
 }
 
 pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.protocol.ServerToClientMessage } {
-    var message: net.protocol.ServerToClientMessage = undefined;
-    var address: posix.sockaddr = undefined;
-    var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
+    return _receiveMessage(net.protocol.ServerToClientMessage, sock);
+}
 
-    const len = try posix.recvfrom(sock, @ptrCast(&message), 0, &address, &addrlen);
-    if (len < 2) {
-        @panic("Received too small of a message");
-    }
-    if (len != message.sizeOf()) {
-        @panic("Message has incorrect size");
-    }
-    return .{ address, message };
+pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.protocol.ClientToServerMessage } {
+    return _receiveMessage(net.protocol.ClientToServerMessage, sock);
 }
 
 fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, client_id: ClientId) !?net.protocol.ConnectionAckMessage {

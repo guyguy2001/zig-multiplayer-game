@@ -10,6 +10,7 @@ const simulation = @import("simulation/root.zig");
 const game_net = @import("game_net.zig");
 const server = @import("server.zig");
 const client = @import("client.zig");
+const protocol = @import("net/protocol.zig");
 const utils = @import("utils.zig");
 
 pub fn main() anyerror!void {

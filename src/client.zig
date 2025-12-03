@@ -3,6 +3,7 @@ const std = @import("std");
 const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const game_net = @import("game_net.zig");
+const protocol = @import("net/protocol.zig");
 const utils = @import("utils.zig");
 
 pub const FrameSnapshots = struct {
@@ -38,7 +39,7 @@ pub const SnapshotsBuffer = struct {
         return self.list.len;
     }
 
-    pub fn onSnapshotPartReceived(self: *@This(), part: game_net.SnapshotPartMessage) !void {
+    pub fn onSnapshotPartReceived(self: *@This(), part: protocol.SnapshotPartMessage) !void {
         // Mark all previous frames as done, even if the "done" message hadn't arrived
         for (self.list.first_frame..part.frame_number) |frame| {
             (try self.list.at(frame)).is_done = true;
@@ -52,7 +53,7 @@ pub const SnapshotsBuffer = struct {
         try entry.snapshots.append(self.gpa, part.entity_diff);
     }
 
-    pub fn onSnapshotDoneReceived(self: *@This(), message: game_net.FinishedSendingSnapshotsMessage) !void {
+    pub fn onSnapshotDoneReceived(self: *@This(), message: protocol.FinishedSendingSnapshotsMessage) !void {
         var entry = self.list.at(message.frame_number) catch {
             std.debug.print(
                 "W: Received too old of a frame ({d}, first is {d})\n",
@@ -135,7 +136,7 @@ pub fn handleIncomingMessages(c: *game_net.Client) !HandleIncomingMessagesResult
     return .ok;
 }
 
-fn calculateNeededSimulationSpeed(ack: game_net.InputAckMessage) f32 {
+fn calculateNeededSimulationSpeed(ack: protocol.InputAckMessage) f32 {
     // Howmany frames the server has
     const actual_server_buffer: i64 = @bitCast(ack.ack_frame_number -% ack.received_during_frame);
 

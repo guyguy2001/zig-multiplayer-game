@@ -5,26 +5,17 @@ const client_struct = @import("client.zig");
 const debug = @import("debug.zig");
 const engine = @import("engine.zig");
 const server_structs = @import("server.zig");
+const net = @import("net");
 const simulation = @import("simulation/root.zig");
 const utils = @import("utils.zig");
-const protocol = @import("net/protocol.zig");
 
-pub const ClientId = protocol.ClientId;
+pub const ClientId = net.protocol.ClientId;
 
 const port = 12348;
 const server_address = std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, port);
 // We use ms because this is how it's defined in winsock - https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-setsockopt
 const default_socket_timeout_ms: std.os.windows.DWORD = 2000;
 const max_connection_attempts = 3;
-
-pub fn _hasMessageWaiting(socket: posix.socket_t) !bool {
-    var fds = [_]posix.pollfd{.{
-        .fd = socket,
-        .events = posix.POLL.IN,
-        .revents = 0,
-    }};
-    return try posix.poll(&fds, 0) > 0;
-}
 
 pub const NetworkRole = enum {
     client,
@@ -38,21 +29,21 @@ pub const Server = struct {
     input: server_structs.InputBuffer,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
-        return _hasMessageWaiting(self.socket);
+        return net.utils.hasMessageWaiting(self.socket);
     }
 
     pub fn handleMessage(
         self: *@This(),
         frame_number: u64,
         client_address: posix.sockaddr,
-        message: protocol.ClientToServerMessage,
+        message: net.protocol.ClientToServerMessage,
     ) !void {
         switch (message.type) {
             .input => {
                 const input_message = message.message.input;
-                try sendMessageToClient(self.socket, client_address, &protocol.ServerToClientMessage{
+                try sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
                     .type = .input_ack,
-                    .message = .{ .input_ack = protocol.InputAckMessage{
+                    .message = .{ .input_ack = net.protocol.InputAckMessage{
                         .ack_frame_number = input_message.frame_number,
                         .received_during_frame = frame_number,
                     } },
@@ -81,9 +72,9 @@ pub const Server = struct {
         }
         std.debug.print("Client {d} connected!\n", .{client_id.value});
         self.client_addresses[client_id.value] = client_address;
-        try sendMessageToClient(self.socket, client_address, &protocol.ServerToClientMessage{
+        try sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
             .type = .connection_ack,
-            .message = .{ .connection_ack = protocol.ConnectionAckMessage{
+            .message = .{ .connection_ack = net.protocol.ConnectionAckMessage{
                 .frame_number = frame_number,
             } },
         });
@@ -108,7 +99,7 @@ pub const Client = struct {
     debug_flags: *debug.DebugFlags,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
-        return _hasMessageWaiting(self.socket);
+        return net.utils.hasMessageWaiting(self.socket);
     }
 
     pub fn deinit(self: *@This()) void {
@@ -136,7 +127,7 @@ pub const NetworkState = union(NetworkRole) {
     }
 };
 
-pub fn sendMessageToServer(sock: posix.socket_t, address: posix.sockaddr, message: *const protocol.ClientToServerMessage) !void {
+pub fn sendMessageToServer(sock: posix.socket_t, address: posix.sockaddr, message: *const net.protocol.ClientToServerMessage) !void {
     const ptr = @as([]const u8, @ptrCast(message))[0..message.sizeOf()];
 
     _ = try posix.sendto(
@@ -151,7 +142,7 @@ pub fn sendMessageToServer(sock: posix.socket_t, address: posix.sockaddr, messag
 pub fn sendMessageToClient(
     sock: posix.socket_t,
     address: posix.sockaddr,
-    message: *const protocol.ServerToClientMessage,
+    message: *const net.protocol.ServerToClientMessage,
 ) !void {
     const ptr = @as([]const u8, @ptrCast(message))[0..message.sizeOf()];
 
@@ -164,8 +155,8 @@ pub fn sendMessageToClient(
     );
 }
 
-pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, protocol.ClientToServerMessage } {
-    var message: protocol.ClientToServerMessage = undefined;
+pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.protocol.ClientToServerMessage } {
+    var message: net.protocol.ClientToServerMessage = undefined;
     var address: posix.sockaddr = undefined;
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
 
@@ -179,8 +170,8 @@ pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, prot
     return .{ address, message };
 }
 
-pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, protocol.ServerToClientMessage } {
-    var message: protocol.ServerToClientMessage = undefined;
+pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.protocol.ServerToClientMessage } {
+    var message: net.protocol.ServerToClientMessage = undefined;
     var address: posix.sockaddr = undefined;
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
 
@@ -194,14 +185,14 @@ pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, prot
     return .{ address, message };
 }
 
-fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, client_id: ClientId) !?protocol.ConnectionAckMessage {
+fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, client_id: ClientId) !?net.protocol.ConnectionAckMessage {
     for (0..max_connection_attempts) |_| {
         try sendMessageToServer(
             socket,
             target_address.any,
-            &protocol.ClientToServerMessage{
+            &net.protocol.ClientToServerMessage{
                 .type = .connection,
-                .message = .{ .connection = protocol.ConnectionMessage{
+                .message = .{ .connection = net.protocol.ConnectionMessage{
                     .client_id = client_id,
                 } },
             },
@@ -288,9 +279,9 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: u64) 
     try sendMessageToServer(
         client.socket,
         client.server_address,
-        &protocol.ClientToServerMessage{
+        &net.protocol.ClientToServerMessage{
             .type = .input,
-            .message = .{ .input = protocol.InputMessage{
+            .message = .{ .input = net.protocol.InputMessage{
                 .client_id = client.id,
                 .input = input,
                 .frame_number = frame_number,
@@ -299,7 +290,7 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: u64) 
     );
 }
 
-fn sendToAllClients(server: *const Server, message: *const protocol.ServerToClientMessage) !void {
+fn sendToAllClients(server: *const Server, message: *const net.protocol.ServerToClientMessage) !void {
     for (server.client_addresses) |c| {
         if (c) |address| {
             // std.debug.print("P{any} ", .{address});
@@ -318,18 +309,18 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
                 // Otherwise, only change modified entities
                 world.entities.modified_this_frame[entity.id.index]))
         {
-            try sendToAllClients(server, &protocol.ServerToClientMessage{
+            try sendToAllClients(server, &net.protocol.ServerToClientMessage{
                 .type = .snapshot_part,
-                .message = .{ .snapshot_part = protocol.SnapshotPartMessage{
+                .message = .{ .snapshot_part = net.protocol.SnapshotPartMessage{
                     .entity_diff = entity.make_diff(),
                     .frame_number = world.time.frame_number,
                 } },
             });
         }
     }
-    try sendToAllClients(server, &protocol.ServerToClientMessage{
+    try sendToAllClients(server, &net.protocol.ServerToClientMessage{
         .type = .finished_sending_snapshots,
-        .message = .{ .finished_sending_snapshots = protocol.FinishedSendingSnapshotsMessage{
+        .message = .{ .finished_sending_snapshots = net.protocol.FinishedSendingSnapshotsMessage{
             .frame_number = world.time.frame_number,
         } },
     });

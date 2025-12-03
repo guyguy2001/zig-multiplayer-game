@@ -29,18 +29,26 @@ pub fn build(b: *std.Build) void {
     // to our consumers. We must give it a name because a Zig package can expose
     // multiple modules and consumers will need to be able to specify which
     // module they want to access.
-    const mod = b.addModule("zig_multiplayer_game", .{
+    const game_mod = b.addModule("game", .{
         // The root source file is the "entry point" of this module. Users of
         // this module will only be able to access public declarations contained
         // in this file, which means that if you have declarations that you
         // intend to expose to consumers that were defined in other files part
         // of this module, you will have to make sure to re-export them from
         // the root file.
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/game/root.zig"),
         // Later on we'll use this module as the root module of a test executable
         // which requires us to specify a target.
         .target = target,
     });
+
+    const net_mod = b.addModule("net", .{
+        .root_source_file = b.path("src/net/root.zig"),
+        .target = target,
+    });
+
+    net_mod.addImport("game", game_mod);
+    game_mod.addImport("net", net_mod);
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
@@ -80,7 +88,8 @@ pub fn build(b: *std.Build) void {
                 // repeated because you are allowed to rename your imports, which
                 // can be extremely useful in case of collisions (which can happen
                 // importing modules from different packages).
-                .{ .name = "zig_multiplayer_game", .module = mod },
+                .{ .name = "game", .module = game_mod },
+                .{ .name = "net", .module = net_mod },
             },
         }),
     });
@@ -121,7 +130,7 @@ pub fn build(b: *std.Build) void {
     // Here `mod` needs to define a target, which is why earlier we made sure to
     // set the releative field.
     const mod_tests = b.addTest(.{
-        .root_module = mod,
+        .root_module = game_mod,
     });
 
     // A run step that will run the test executable.
@@ -168,14 +177,14 @@ pub fn build(b: *std.Build) void {
     const raygui = raylib_dep.module("raygui"); // raygui module
     const raylib_artifact = raylib_dep.artifact("raylib"); // raylib C library
 
+    const args = b.dependency("args", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("args");
+
     exe.linkLibrary(raylib_artifact);
-    exe.root_module.addImport("raylib", raylib);
-    exe.root_module.addImport("raygui", raygui);
-    exe.root_module.addImport(
-        "args",
-        b.dependency("args", .{
-            .target = target,
-            .optimize = optimize,
-        }).module("args"),
-    );
+    game_mod.addImport("raylib", raylib);
+    game_mod.addImport("raygui", raygui);
+    game_mod.addImport("args", args);
+    exe.root_module.addImport("args", args);
 }

@@ -1,9 +1,12 @@
+const game = @import("game");
+
 // Currently I source a couple of types from the rest of the project,
 // as I'm okay with having them be bit-packed across the entire project.
 // These might be changed to have packed variants here and non-packed
 // variants in the original files when optimization is more important.
-const engine = @import("../engine.zig");
-const utils = @import("../utils.zig");
+const EntityDiff = game.EntityDiff;
+const Input = game.Input;
+const FrameNumber = game.FrameNumber;
 
 pub const ClientId = packed struct {
     value: u8,
@@ -21,16 +24,16 @@ pub const ConnectionMessage = packed struct {
 pub const InputMessage = packed struct {
     frame_number: u64,
     client_id: ClientId,
-    input: engine.Input,
+    input: Input,
 };
 
 pub const ConnectionAckMessage = packed struct {
-    frame_number: utils.FrameNumber,
+    frame_number: FrameNumber,
 };
 
 pub const SnapshotPartMessage = packed struct {
     frame_number: u64,
-    entity_diff: engine.EntityDiff,
+    entity_diff: EntityDiff,
 };
 
 pub const FinishedSendingSnapshotsMessage = packed struct {

@@ -2,42 +2,6 @@ const std = @import("std");
 
 pub const FrameNumber = u64;
 
-pub fn pack_type(T: type) type {
-    var type_info = @typeInfo(T);
-    switch (type_info) {
-        .@"struct" => |*s| {
-            s.decls = &[0]std.builtin.Type.Declaration{};
-            s.layout = .@"packed";
-            var fields: [s.fields.len]std.builtin.Type.StructField = undefined;
-            @memcpy(&fields, s.fields.ptr);
-            for (&fields) |*f| {
-                f.type = pack_type(f.type);
-                f.alignment = 0;
-            }
-            s.fields = &fields;
-        },
-        else => @compileError("utils.as_packed only works for structs!"),
-    }
-
-    return @Type(type_info);
-}
-
-pub fn to_packed(T: type, source: T) pack_type(T) {
-    var result: pack_type(T) = undefined;
-    inline for (@typeInfo(T).@"struct".fields) |field| {
-        @field(result, field.name) = @field(source, field.name);
-    }
-    return result;
-}
-
-pub fn to_unpacked(T: type, source: pack_type(T)) T {
-    var result: T = undefined;
-    inline for (@typeInfo(T).@"struct".fields) |field| {
-        @field(result, field.name) = @field(source, field.name);
-    }
-    return result;
-}
-
 // This currently uses an allocation-based linked list, while the implementation I actually want
 // would be with a fixed-sized buffer, as part of the point of this struct
 // is for cases where I'm expecting a fixed amount of messages at a time.
@@ -175,7 +139,8 @@ pub fn millisToNanos(milli: u64) u64 {
     return milli * 1000_000;
 }
 
-/// NOTE: this isn't perfectly random, the larger the number the worse this will be
+/// NOTE: this isn't perfectly random, the larger the number
+/// the worse the randomness will be on average
 pub fn randInt(max: u64) u64 {
     var roll: u64 = undefined;
     std.posix.getrandom(std.mem.asBytes(&roll)) catch unreachable;

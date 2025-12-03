@@ -1,11 +1,12 @@
 const std = @import("std");
 const posix = std.posix;
 
+const net = @import("net");
+
 const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const game_net = @import("game_net.zig");
 const utils = @import("utils.zig");
-const protocol = @import("net/protocol.zig");
 
 const PlayersInput = struct {
     list: [3]?engine.Input,
@@ -34,7 +35,7 @@ pub const InputBuffer = struct {
     current_state: [3]engine.Input,
     last_seen: [3]utils.FrameNumber,
 
-    pub fn onInputReceived(self: *@This(), message: protocol.InputMessage) !void {
+    pub fn onInputReceived(self: *@This(), message: net.protocol.InputMessage) !void {
         // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });
         std.debug.print("F{d} P{d} Input received \n", .{ message.frame_number, message.client_id.value });
         var entry = self.list.at(message.frame_number) catch {

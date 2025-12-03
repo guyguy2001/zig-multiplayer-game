@@ -297,6 +297,11 @@ fn drawGame(world: *engine.World, network: *game_net.NetworkState) !void {
                     const client_text = try std.fmt.bufPrintZ(&buff, "Client {d}", .{c.id.value});
                     rl.drawText(client_text, @as(i32, @intFromFloat(world.screen_size.x / 3)), 32 * 1, 64, .black);
                 }
+                {
+                    var buff = [_]u8{0} ** 20;
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.simulation_speed_multiplier});
+                    rl.drawText(frame_number_text, 0, 32 * 2, 32, .blue);
+                }
             },
         }
     }

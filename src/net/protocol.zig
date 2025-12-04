@@ -1,4 +1,5 @@
 const game = @import("game");
+const lib = @import("lib");
 
 // Currently I source a couple of types from the rest of the project,
 // as I'm okay with having them be bit-packed across the entire project.
@@ -6,7 +7,7 @@ const game = @import("game");
 // variants in the original files when optimization is more important.
 const EntityDiff = game.EntityDiff;
 const Input = game.Input;
-const FrameNumber = game.FrameNumber;
+const FrameNumber = lib.FrameNumber;
 
 pub const ClientId = packed struct {
     value: u8,

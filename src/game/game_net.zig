@@ -1,11 +1,13 @@
 const std = @import("std");
 const posix = std.posix;
 
+const lib = @import("lib");
+const net = @import("net");
+
 const client_struct = @import("client.zig");
 const debug = @import("debug.zig");
 const engine = @import("engine.zig");
 const server_structs = @import("server.zig");
-const net = @import("net");
 const simulation = @import("simulation/root.zig");
 const utils = @import("utils.zig");
 
@@ -65,7 +67,7 @@ pub const Server = struct {
         self: *@This(),
         client_address: posix.sockaddr,
         client_id: ClientId,
-        frame_number: utils.FrameNumber,
+        frame_number: lib.FrameNumber,
     ) !void {
         if (client_id.value >= self.client_addresses.len) {
             std.debug.print("Client connected with id {d}, which is out of range!", .{client_id.value});
@@ -91,8 +93,8 @@ pub const Client = struct {
     id: ClientId,
     socket: posix.socket_t,
     server_address: posix.sockaddr,
-    ack_server_frame: utils.FrameNumber = 0,
-    snapshot_done_server_frame: utils.FrameNumber = 0,
+    ack_server_frame: lib.FrameNumber = 0,
+    snapshot_done_server_frame: lib.FrameNumber = 0,
     simulation_speed_multiplier: f32 = 1,
     server_snapshots: client_struct.SnapshotsBuffer,
     timeline: simulation.ClientTimeline,
@@ -160,7 +162,7 @@ pub fn sendMessageToClient(
     );
 }
 
-fn _receiveMessage(T: type, sock: posix.socket_t) !struct { posix.sockaddr, T } {
+fn receiveMessage(T: type, sock: posix.socket_t) !struct { posix.sockaddr, T } {
     var message: T = undefined;
     var address: posix.sockaddr = undefined;
     var addrlen: posix.socklen_t = @sizeOf(@TypeOf(address));
@@ -177,11 +179,11 @@ fn _receiveMessage(T: type, sock: posix.socket_t) !struct { posix.sockaddr, T } 
 }
 
 pub fn clientReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.protocol.ServerToClientMessage } {
-    return _receiveMessage(net.protocol.ServerToClientMessage, sock);
+    return receiveMessage(net.protocol.ServerToClientMessage, sock);
 }
 
 pub fn serverReceiveMessage(sock: posix.socket_t) !struct { posix.sockaddr, net.protocol.ClientToServerMessage } {
-    return _receiveMessage(net.protocol.ClientToServerMessage, sock);
+    return receiveMessage(net.protocol.ClientToServerMessage, sock);
 }
 
 fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, client_id: ClientId) !?net.protocol.ConnectionAckMessage {
@@ -214,7 +216,7 @@ fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, cli
     return error.ConnectionFailedAfterManyAttempts;
 }
 
-pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug.DebugFlags) !struct { NetworkState, utils.FrameNumber } {
+pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug.DebugFlags) !struct { NetworkState, lib.FrameNumber } {
     const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(socket);
     try posix.setsockopt(

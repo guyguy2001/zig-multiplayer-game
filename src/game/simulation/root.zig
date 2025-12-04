@@ -1,8 +1,9 @@
 const std = @import("std");
 
+const lib = @import("lib");
+
 const engine = @import("../engine.zig");
 const game_net = @import("../game_net.zig");
-const utils = @import("../utils.zig");
 
 const movement = @import("movement.zig");
 
@@ -37,7 +38,7 @@ pub const ClientTimelineNode = struct {
     // and then drop them from the timeline.
 };
 
-pub const ClientTimeline = utils.FrameCyclicBuffer(ClientTimelineNode, undefined, false);
+pub const ClientTimeline = lib.FrameCyclicBuffer(ClientTimelineNode, undefined, false);
 
 pub fn resimulateFrom(
     timeline: *ClientTimeline,

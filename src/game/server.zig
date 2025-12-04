@@ -1,12 +1,12 @@
 const std = @import("std");
 const posix = std.posix;
 
+const lib = @import("lib");
 const net = @import("net");
 
 const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const game_net = @import("game_net.zig");
-const utils = @import("utils.zig");
 
 const PlayersInput = struct {
     list: [3]?engine.Input,
@@ -31,9 +31,9 @@ const PlayersInput = struct {
 
 /// Holds the inputs of the players from every as-of-yet unstimulated frame.
 pub const InputBuffer = struct {
-    list: utils.FrameCyclicBuffer(PlayersInput, .empty(), true),
+    list: lib.FrameCyclicBuffer(PlayersInput, .empty(), true),
     current_state: [3]engine.Input,
-    last_seen: [3]utils.FrameNumber,
+    last_seen: [3]lib.FrameNumber,
 
     pub fn onInputReceived(self: *@This(), message: net.protocol.InputMessage) !void {
         // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });
@@ -88,7 +88,7 @@ pub const InputBuffer = struct {
         return InputBuffer{
             .list = .init(gpa),
             .current_state = [_]engine.Input{.empty()} ** 3,
-            .last_seen = [_]utils.FrameNumber{0} ** 3,
+            .last_seen = [_]lib.FrameNumber{0} ** 3,
         };
     }
 

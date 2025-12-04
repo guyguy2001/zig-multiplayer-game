@@ -3,6 +3,7 @@ const argsParser = @import("args");
 const std = @import("std");
 const rl = @import("raylib");
 
+const lib = @import("lib");
 const net = @import("net");
 
 const consts = @import("consts.zig");
@@ -74,7 +75,7 @@ pub fn main() anyerror!void {
     hideMenu(&world);
     spawnGame(&world);
     var debug_flags = debug.DebugFlags{ .outgoing_pl_percent = 0 };
-    var network: game_net.NetworkState, const starting_frame_numer: utils.FrameNumber =
+    var network: game_net.NetworkState, const starting_frame_numer: lib.FrameNumber =
         (if (is_server)
             .{ try game_net.setupServer(alloc), 0 }
         else

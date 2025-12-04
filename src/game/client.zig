@@ -1,11 +1,11 @@
 const std = @import("std");
 
+const lib = @import("lib");
 const net = @import("net");
 
 const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const game_net = @import("game_net.zig");
-const utils = @import("utils.zig");
 
 pub const FrameSnapshots = struct {
     // Thoughts:
@@ -29,10 +29,10 @@ pub const FrameSnapshots = struct {
 };
 
 pub const SnapshotsBuffer = struct {
-    list: utils.FrameCyclicBuffer(FrameSnapshots, .init(), true),
+    list: lib.FrameCyclicBuffer(FrameSnapshots, .init(), true),
     gpa: std.mem.Allocator,
 
-    pub fn firstFrame(self: *const @This()) utils.FrameNumber {
+    pub fn firstFrame(self: *const @This()) lib.FrameNumber {
         return self.list.first_frame;
     }
 
@@ -138,7 +138,7 @@ pub fn handleIncomingMessages(c: *game_net.Client) !HandleIncomingMessagesResult
 }
 
 fn calculateNeededSimulationSpeed(ack: net.protocol.InputAckMessage) f32 {
-    // Howmany frames the server has
+    // How many frames the server has
     const actual_server_buffer: i64 = @bitCast(ack.ack_frame_number -% ack.received_during_frame);
 
     const buffer_error: f32 = @floatFromInt(actual_server_buffer - consts.desired_server_buffer);

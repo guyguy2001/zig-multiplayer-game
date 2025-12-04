@@ -47,8 +47,15 @@ pub fn build(b: *std.Build) void {
         .target = target,
     });
 
+    const lib_mod = b.addModule("lib", .{
+        .root_source_file = b.path("src/lib/root.zig"),
+        .target = target,
+    });
+
     net_mod.addImport("game", game_mod);
     game_mod.addImport("net", net_mod);
+    net_mod.addImport("lib", lib_mod);
+    game_mod.addImport("lib", lib_mod);
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
@@ -90,6 +97,7 @@ pub fn build(b: *std.Build) void {
                 // importing modules from different packages).
                 .{ .name = "game", .module = game_mod },
                 .{ .name = "net", .module = net_mod },
+                .{ .name = "lib", .module = lib_mod },
             },
         }),
     });

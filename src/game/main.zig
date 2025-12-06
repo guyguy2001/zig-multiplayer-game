@@ -5,14 +5,12 @@ const rl = @import("raylib");
 
 const lib = @import("lib");
 const net = @import("net");
+const utils = lib.utils;
+const server = net.server;
+const client = net.client;
 
-const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const simulation = @import("simulation/root.zig");
-const game_net = @import("game_net.zig");
-const server = @import("server.zig");
-const client = @import("client.zig");
-const utils = @import("utils.zig");
 
 pub fn main() anyerror!void {
     // Initialization
@@ -25,7 +23,7 @@ pub fn main() anyerror!void {
     }, argsAllocator, .print) catch return;
     defer options.deinit();
 
-    const client_id = game_net.ClientId{ .value = options.options.@"client-id" };
+    const client_id = net.ClientId{ .value = options.options.@"client-id" };
     const is_server = options.options.server;
 
     std.debug.print("is server!: {}\n", .{is_server});
@@ -62,7 +60,7 @@ pub fn main() anyerror!void {
             .modified_this_frame = [_]bool{false} ** 100,
             .next_id = 0x00,
         },
-        .time = engine.Time.init(1000 / consts.simulation_speed.regular_fps),
+        .time = engine.Time.init(1000 / net.consts.simulation_speed.regular_fps),
         .screen_size = rl.Vector2.init(screenWidth, screenHeight),
         .state = .menu,
     };
@@ -73,11 +71,11 @@ pub fn main() anyerror!void {
     world.state = .game;
     hideMenu(&world);
     spawnGame(&world);
-    var network: game_net.NetworkState, const starting_frame_numer: lib.FrameNumber =
+    var network: net.NetworkState, const starting_frame_numer: lib.FrameNumber =
         (if (is_server)
-            .{ try game_net.setupServer(alloc), 0 }
+            .{ try net.utils.setupServer(alloc), 0 }
         else
-            try game_net.connectToServer(client_id, alloc));
+            try net.utils.connectToServer(client_id, alloc));
     defer network.cleanup();
 
     world.time.frame_number = starting_frame_numer;
@@ -115,25 +113,14 @@ pub fn main() anyerror!void {
         world.time.update();
         switch (network) {
             .server => |*s| {
-                while (try s.hasMessageWaiting()) {
-                    const client_address, const message = game_net.serverReceiveMessage(s.socket) catch |err| {
-                        switch (err) {
-                            error.ConnectionResetByPeer, error.Timeout => {
-                                std.debug.print("Disconnected by peer!\n", .{});
-                                return .quit;
-                            },
-                            error.InvalidMessage => continue,
-                            _ => {
-                                return err;
-                            },
-                        }
-                    };
-                    try s.handleMessage(world.time.frame_number, client_address, message);
+                const status = try s.handleIncomingMessages(world.time.frame_number);
+                if (status == .quit) {
+                    break :main_loop;
                 }
                 const inputs = try s.input.consumeFrame(world.time.frame_number);
 
                 try simulation.simulateServer(&world, inputs);
-                try game_net.sendSnapshots(s, &world);
+                try net.utils.sendSnapshots(s, &world);
                 // try debugServerState(s);
             },
 
@@ -145,7 +132,7 @@ pub fn main() anyerror!void {
                     break :main_loop;
                 }
 
-                try game_net.sendInput(c, input, world.time.frame_number);
+                try net.utils.sendInput(c, input, world.time.frame_number);
 
                 while (c.server_snapshots.len() > 0 and try c.server_snapshots.isFrameReady(c.server_snapshots.firstFrame())) {
                     // Look at the first snapshot (frame n-k), apply it to frame n-k in the timeline,
@@ -209,7 +196,7 @@ pub fn main() anyerror!void {
     }
 }
 
-fn debugClientState(c: *game_net.Client) void {
+fn debugClientState(c: *net.Client) void {
     std.debug.print("==== Timeline Start =====\n", .{});
     {
         var frame_number = c.timeline.first_frame;
@@ -229,7 +216,7 @@ fn debugClientState(c: *game_net.Client) void {
     std.debug.print("===== Snapshots End ===== \n", .{});
 }
 
-fn debugServerState(s: *game_net.Server) !void {
+fn debugServerState(s: *net.Server) !void {
     std.debug.print("==== Inputs Start ===== \n", .{});
     {
         var frame_number = s.input.list.first_frame;
@@ -241,7 +228,7 @@ fn debugServerState(s: *game_net.Server) !void {
     std.debug.print("===== Inputs End ===== \n", .{});
 }
 
-fn drawGame(world: *engine.World, network: *game_net.NetworkState) !void {
+fn drawGame(world: *engine.World, network: *net.NetworkState) !void {
     rl.beginDrawing();
     defer rl.endDrawing();
 

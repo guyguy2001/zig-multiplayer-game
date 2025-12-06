@@ -1,17 +1,18 @@
 const std = @import("std");
 const posix = std.posix;
 
-// const simulation = game.simulation;
+const game = @import("game");
 const lib = @import("lib");
-const net = @import("net");
+const engine = game.engine;
+const simulation = game.simulation;
 
 const consts = @import("consts.zig");
-const engine = @import("engine.zig");
-const game_net = @import("game_net.zig");
-const simulation = @import("simulation/root.zig");
+const protocol = @import("protocol.zig");
+const root = @import("root.zig");
+const utils = @import("utils.zig");
 
 pub const Client = struct {
-    id: game_net.ClientId,
+    id: root.ClientId,
     socket: posix.socket_t,
     server_address: posix.sockaddr,
     ack_server_frame: lib.FrameNumber = 0,
@@ -22,7 +23,7 @@ pub const Client = struct {
     last_frame_nanos: ?i128 = null,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
-        return net.utils.hasMessageWaiting(self.socket);
+        return utils.hasMessageWaiting(self.socket);
     }
 
     pub fn deinit(self: *@This()) void {
@@ -67,7 +68,7 @@ pub const SnapshotsBuffer = struct {
         return self.list.len;
     }
 
-    pub fn onSnapshotPartReceived(self: *@This(), part: net.protocol.SnapshotPartMessage) !void {
+    pub fn onSnapshotPartReceived(self: *@This(), part: protocol.SnapshotPartMessage) !void {
         // Mark all previous frames as done, even if the "done" message hadn't arrived
         for (self.list.first_frame..part.frame_number) |frame| {
             (try self.list.at(frame)).is_done = true;
@@ -81,7 +82,7 @@ pub const SnapshotsBuffer = struct {
         try entry.snapshots.append(self.gpa, part.entity_diff);
     }
 
-    pub fn onSnapshotDoneReceived(self: *@This(), message: net.protocol.FinishedSendingSnapshotsMessage) !void {
+    pub fn onSnapshotDoneReceived(self: *@This(), message: protocol.FinishedSendingSnapshotsMessage) !void {
         var entry = self.list.at(message.frame_number) catch {
             std.debug.print(
                 "W: Received too old of a frame ({d}, first is {d})\n",
@@ -127,21 +128,16 @@ pub const SnapshotsBuffer = struct {
     }
 };
 
-pub const HandleIncomingMessagesResult = enum {
-    ok,
-    quit,
-};
-
-pub fn handleIncomingMessages(c: *Client) !HandleIncomingMessagesResult {
+pub fn handleIncomingMessages(c: *Client) !root.HandleIncomingMessagesResult {
     while (try c.hasMessageWaiting()) {
-        _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
+        _, const message = utils.clientReceiveMessage(c.socket) catch |err| {
             switch (err) {
-                error.ConnectionResetByPeer, error.Timeout => {
+                error.ConnectionResetByPeer, error.ConnectionTimedOut => {
                     std.debug.print("Disconnected by peer!\n", .{});
                     return .quit;
                 },
                 error.InvalidMessage => continue,
-                _ => {
+                else => {
                     return err;
                 },
             }
@@ -168,7 +164,7 @@ pub fn handleIncomingMessages(c: *Client) !HandleIncomingMessagesResult {
     return .ok;
 }
 
-fn calculateNeededSimulationSpeed(ack: net.protocol.InputAckMessage) f32 {
+fn calculateNeededSimulationSpeed(ack: protocol.InputAckMessage) f32 {
     // How many frames the server has
     const actual_server_buffer: i64 = @bitCast(ack.ack_frame_number -% ack.received_during_frame);
 

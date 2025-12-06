@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
-const game_net = @import("game_net.zig");
+
+const net = @import("net");
 
 const Tag = enum {
     player,
@@ -69,7 +70,7 @@ pub const Timer = struct {
 };
 
 pub const NetworkedEntity = struct {
-    owner_id: game_net.ClientId,
+    owner_id: net.ClientId,
 };
 
 pub const Entity = struct {
@@ -85,9 +86,9 @@ pub const Entity = struct {
     visible: bool = true,
 
     // TODO: Switch from ClientId to NetowrkIdentity (which is either Server{} or Client{id: u8?})
-    pub fn isSimulatedLocally(self: *const @This(), client_id: game_net.ClientId) bool {
-        if (self.network) |net| {
-            return net.owner_id.value == client_id.value;
+    pub fn isSimulatedLocally(self: *const @This(), client_id: net.ClientId) bool {
+        if (self.network) |network| {
+            return network.owner_id.value == client_id.value;
         } else {
             // Any entity which isn't networked has to be simulated by us (currently unused)
             return true;

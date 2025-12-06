@@ -1,9 +1,9 @@
 const std = @import("std");
 
 const lib = @import("lib");
+const net = @import("net");
 
 const engine = @import("../engine.zig");
-const game_net = @import("../game_net.zig");
 
 const movement = @import("movement.zig");
 
@@ -23,7 +23,7 @@ pub fn applySnapshots(timeline: *ClientTimeline, target_frame: u64, snapshots: [
 pub fn simulateClient(
     world: *engine.World,
     input: engine.Input,
-    client_id: game_net.ClientId,
+    client_id: net.ClientId,
 ) !void {
     movement.movePlayer(world, input, client_id);
     movement.moveEnemies(world);
@@ -42,7 +42,7 @@ pub const ClientTimeline = lib.FrameCyclicBuffer(ClientTimelineNode, undefined, 
 
 pub fn resimulateFrom(
     timeline: *ClientTimeline,
-    client_id: game_net.ClientId,
+    client_id: net.ClientId,
     starting_frame: u64,
 ) !engine.World {
     var world = (try timeline.at(starting_frame)).world;

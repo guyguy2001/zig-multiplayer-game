@@ -1,12 +1,14 @@
 const std = @import("std");
 const posix = std.posix;
 
+const game = @import("game");
 const lib = @import("lib");
-const net = @import("net");
+const engine = game.engine;
 
 const consts = @import("consts.zig");
-const engine = @import("engine.zig");
-const game_net = @import("game_net.zig");
+const protocol = @import("protocol.zig");
+const root = @import("root.zig");
+const utils = @import("utils.zig");
 
 pub const Server = struct {
     socket: posix.socket_t,
@@ -16,21 +18,21 @@ pub const Server = struct {
     input: InputBuffer,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
-        return net.utils.hasMessageWaiting(self.socket);
+        return utils.hasMessageWaiting(self.socket);
     }
 
     pub fn handleMessage(
         self: *@This(),
         frame_number: u64,
         client_address: posix.sockaddr,
-        message: net.protocol.ClientToServerMessage,
+        message: protocol.ClientToServerMessage,
     ) !void {
         switch (message.type) {
             .input => {
                 const input_message = message.message.input;
-                try game_net.sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
+                try utils.sendMessageToClient(self.socket, client_address, &protocol.ServerToClientMessage{
                     .type = .input_ack,
-                    .message = .{ .input_ack = net.protocol.InputAckMessage{
+                    .message = .{ .input_ack = protocol.InputAckMessage{
                         .ack_frame_number = input_message.frame_number,
                         .received_during_frame = frame_number,
                     } },
@@ -47,10 +49,29 @@ pub const Server = struct {
         }
     }
 
+    pub fn handleIncomingMessages(self: *@This(), frame_number: lib.FrameNumber) !root.HandleIncomingMessagesResult {
+        while (try self.hasMessageWaiting()) {
+            const client_address, const message = utils.serverReceiveMessage(self.socket) catch |err| {
+                switch (err) {
+                    error.ConnectionResetByPeer, error.ConnectionTimedOut => {
+                        std.debug.print("Disconnected by peer!\n", .{});
+                        return .quit;
+                    },
+                    error.InvalidMessage => continue,
+                    else => {
+                        return err;
+                    },
+                }
+            };
+            try self.handleMessage(frame_number, client_address, message);
+        }
+        return .ok;
+    }
+
     pub fn onClientConnected(
         self: *@This(),
         client_address: posix.sockaddr,
-        client_id: game_net.ClientId,
+        client_id: root.ClientId,
         frame_number: lib.FrameNumber,
     ) !void {
         if (client_id.value >= self.client_addresses.len) {
@@ -59,9 +80,9 @@ pub const Server = struct {
         }
         std.debug.print("Client {d} connected!\n", .{client_id.value});
         self.client_addresses[client_id.value] = client_address;
-        try game_net.sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
+        try utils.sendMessageToClient(self.socket, client_address, &protocol.ServerToClientMessage{
             .type = .connection_ack,
-            .message = .{ .connection_ack = net.protocol.ConnectionAckMessage{
+            .message = .{ .connection_ack = protocol.ConnectionAckMessage{
                 .frame_number = frame_number,
             } },
         });
@@ -99,7 +120,7 @@ pub const InputBuffer = struct {
     current_state: [3]engine.Input,
     last_seen: [3]lib.FrameNumber,
 
-    pub fn onInputReceived(self: *@This(), message: net.protocol.InputMessage) !void {
+    pub fn onInputReceived(self: *@This(), message: protocol.InputMessage) !void {
         // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });
         std.debug.print("F{d} P{d} Input received \n", .{ message.frame_number, message.client_id.value });
         var entry = self.list.at(message.frame_number) catch {

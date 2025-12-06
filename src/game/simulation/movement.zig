@@ -1,9 +1,11 @@
 const std = @import("std");
 const rl = @import("raylib");
-const engine = @import("../engine.zig");
-const game_net = @import("../game_net.zig");
 
-pub fn movePlayer(world: *engine.World, input: engine.Input, client_id: game_net.ClientId) void {
+const net = @import("net");
+
+const engine = @import("../engine.zig");
+
+pub fn movePlayer(world: *engine.World, input: engine.Input, client_id: net.ClientId) void {
     const direction = input.getDirection();
     // Do ask the snapshot the server sent for the player position, but:
     // If a snapshot arrived - we should have 3 snapshots, so interpolate.

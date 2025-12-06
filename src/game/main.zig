@@ -269,14 +269,14 @@ fn drawGame(world: *engine.World, network: *net.NetworkState) !void {
         rl.drawFPS(0, 0);
         {
             var buff = [_]u8{0} ** 20;
-            const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{world.time.frame_number});
+            const frame_number_text = try std.fmt.bufPrintZ(&buff, "Frame {d}", .{world.time.frame_number});
             rl.drawText(frame_number_text, 0, 32 * 1, 32, .black);
         }
         switch (network.*) {
             .server => |*s| {
                 {
                     var buff = [_]u8{0} ** 20;
-                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{try s.input.numReadyFrames()});
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "Buffer: {d}", .{try s.input.numReadyFrames()});
                     rl.drawText(frame_number_text, 0, 32 * 2, 32, .green);
                 }
                 {
@@ -291,7 +291,7 @@ fn drawGame(world: *engine.World, network: *net.NetworkState) !void {
                 }
                 {
                     var buff = [_]u8{0} ** 20;
-                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "{d}", .{c.simulation_speed_multiplier});
+                    const frame_number_text = try std.fmt.bufPrintZ(&buff, "Speed: x{d}", .{c.simulation_speed_multiplier});
                     rl.drawText(frame_number_text, 0, 32 * 2, 32, .blue);
                 }
             },

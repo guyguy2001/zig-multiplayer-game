@@ -214,15 +214,15 @@ pub const Time = struct {
         self.frame_number += 1;
     }
 
-    pub fn deltaMillis(self: *@This()) u32 {
+    pub fn deltaMillis(self: *const @This()) u32 {
         return self.time_per_frame;
     }
 
-    pub fn deltaSecs(self: *@This()) f32 {
+    pub fn deltaSecs(self: *const @This()) f32 {
         return @as(f32, @floatFromInt(self.deltaMillis())) / 1000.0;
     }
 
-    pub fn getDrift(self: *@This()) f32 {
+    pub fn getDrift(self: *const @This()) f32 {
         return (@as(f32, @floatFromInt(std.time.milliTimestamp() - self.game_start_time)) /
             @as(f32, @floatFromInt(self.time_per_frame))) -
             @as(f32, @floatFromInt(self.frame_number));

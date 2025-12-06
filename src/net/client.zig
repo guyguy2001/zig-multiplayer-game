@@ -11,16 +11,18 @@ const protocol = @import("protocol.zig");
 const root = @import("root.zig");
 const utils = @import("utils.zig");
 
+/// The client-specific state, including buffers for the snapshots received from the server,
+/// and for the locally-simulated world for each frame (and the corresponding inputs);
 pub const Client = struct {
     id: root.ClientId,
     socket: posix.socket_t,
     server_address: posix.sockaddr,
-    ack_server_frame: lib.FrameNumber = 0,
-    snapshot_done_server_frame: lib.FrameNumber = 0,
+
     simulation_speed_multiplier: f32 = 1,
+    last_frame_nanos: ?i128 = null,
+
     server_snapshots: SnapshotsBuffer,
     timeline: simulation.ClientTimeline,
-    last_frame_nanos: ?i128 = null,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
         return utils.hasMessageWaiting(self.socket);
@@ -148,16 +150,14 @@ pub fn handleIncomingMessages(c: *Client) !root.HandleIncomingMessagesResult {
             },
             .finished_sending_snapshots => {
                 try c.server_snapshots.onSnapshotDoneReceived(message.message.finished_sending_snapshots);
-                c.snapshot_done_server_frame = message.message.finished_sending_snapshots.frame_number;
             },
             .input_ack => {
                 const ack = message.message.input_ack;
                 c.simulation_speed_multiplier = calculateNeededSimulationSpeed(ack);
-                c.ack_server_frame = ack.received_during_frame;
-                // std.debug.print("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
+                std.log.debug("ACK For F{d}, Server frame {d}\n", .{ ack.ack_frame_number, ack.received_during_frame });
             },
             .connection_ack => {
-                std.debug.print("W: Received connection ack late into the game", .{});
+                std.log.warn("Received connection ack late into the game", .{});
             },
         }
     }

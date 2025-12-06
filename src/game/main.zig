@@ -71,14 +71,14 @@ pub fn main() anyerror!void {
     world.state = .game;
     hideMenu(&world);
     spawnGame(&world);
-    var network: net.NetworkState, const starting_frame_numer: lib.FrameNumber =
+    var network: net.NetworkState, const starting_frame_number: lib.FrameNumber =
         (if (is_server)
             .{ try net.utils.setupServer(alloc), 0 }
         else
             try net.utils.connectToServer(client_id, alloc));
     defer network.cleanup();
 
-    world.time.frame_number = starting_frame_numer;
+    world.time.frame_number = starting_frame_number;
 
     if (!is_server) {
         std.Thread.sleep(utils.millisToNanos(250));
@@ -86,31 +86,9 @@ pub fn main() anyerror!void {
 
     // Main game loop
     main_loop: while (!rl.windowShouldClose()) { // Detect window close button or ESC key
-        // Update
-        //----------------------------------------------------------------------------------
-        switch (network) {
-            .server => if (world.time.getDrift() < 0) {
-                const to_sleep: u64 = utils.millisToNanos(@intFromFloat(
-                    world.time.getDrift() * -1 * @as(f32, @floatFromInt(world.time.time_per_frame)),
-                ));
-                std.Thread.sleep(to_sleep);
-            },
-            .client => |*c| {
-                const time_per_frame: u64 = utils.millisToNanos(@intFromFloat(@as(f32, @floatFromInt(world.time.time_per_frame)) / c.simulation_speed_multiplier));
-
-                const now = std.time.nanoTimestamp();
-                if (c.last_frame_nanos == null) {
-                    c.last_frame_nanos = now;
-                }
-                std.Thread.sleep(time_per_frame - @min(
-                    time_per_frame,
-                    @as(u64, @intCast(now - c.last_frame_nanos.?)),
-                ));
-                c.last_frame_nanos = std.time.nanoTimestamp();
-            },
-        }
-
+        waitForNextFrame(&world, &network);
         world.time.update();
+
         switch (network) {
             .server => |*s| {
                 const status = try s.handleIncomingMessages(world.time.frame_number);
@@ -145,18 +123,18 @@ pub fn main() anyerror!void {
                     var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
                     defer snapshots.deinit(c.server_snapshots.gpa);
 
-                    if (snapshot_frame < starting_frame_numer) {
+                    if (snapshot_frame < starting_frame_number) {
                         // Disregard snapshots from before we connected;
                         continue;
                     }
 
                     if (snapshot_frame < c.timeline.first_frame) {
-                        std.debug.print("Snapshot frame {d} not present in timeline {d}+\n", .{ snapshot_frame, c.timeline.first_frame });
+                        std.log.warn("Snapshot frame {d} not present in timeline {d}+\n", .{ snapshot_frame, c.timeline.first_frame });
                         continue;
                     }
 
                     if (!snapshots.is_done) {
-                        std.debug.print("W: F{d} snapshots aren't done\n", .{snapshot_frame});
+                        std.log.warn("F{d} snapshots aren't done\n", .{snapshot_frame});
                     }
 
                     // Modify the world of frame n-k
@@ -193,6 +171,30 @@ pub fn main() anyerror!void {
 
         // Cleanup
         world.entities.modified_this_frame = .{false} ** world.entities.modified_this_frame.len;
+    }
+}
+
+fn waitForNextFrame(world: *const engine.World, network: *net.NetworkState) void {
+    switch (network.*) {
+        .server => if (world.time.getDrift() < 0) {
+            const to_sleep: u64 = utils.millisToNanos(@intFromFloat(
+                world.time.getDrift() * -1 * @as(f32, @floatFromInt(world.time.time_per_frame)),
+            ));
+            std.Thread.sleep(to_sleep);
+        },
+        .client => |*c| {
+            const time_per_frame: u64 = utils.millisToNanos(@intFromFloat(@as(f32, @floatFromInt(world.time.time_per_frame)) / c.simulation_speed_multiplier));
+
+            const now = std.time.nanoTimestamp();
+            if (c.last_frame_nanos == null) {
+                c.last_frame_nanos = now;
+            }
+            std.Thread.sleep(time_per_frame - @min(
+                time_per_frame,
+                @as(u64, @intCast(now - c.last_frame_nanos.?)),
+            ));
+            c.last_frame_nanos = std.time.nanoTimestamp();
+        },
     }
 }
 

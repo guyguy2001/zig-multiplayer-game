@@ -1,8 +1,9 @@
-zig build run -- --server &
+# Copy this near the exe before running
+./zig_multiplayer_game.exe -- --server &
 pid1=$!
-zig build run -- --client-id 1 &
+./zig_multiplayer_game.exe -- --client-id 1 &
 pid2=$!
-zig build run -- --client-id 2 &
+./zig_multiplayer_game.exe -- --client-id 2 &
 pid3=$!
 
 # Wait for user input

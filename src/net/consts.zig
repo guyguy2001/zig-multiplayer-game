@@ -8,7 +8,6 @@ pub const default_socket_timeout_ms: std.os.windows.DWORD = 2000;
 pub const max_connection_attempts = 3;
 
 pub const stop_holding_input_threshold = 5;
-pub const frame_buffer_size = 3;
 
 // The amount of frames we want our inputs to arrive at the server before it needs them
 pub const desired_server_buffer = 6;

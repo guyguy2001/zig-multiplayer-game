@@ -55,7 +55,7 @@ pub fn resimulateFrom(
 
         // Update the starting point to be the simulated previous state, to make the new snapshots we're rebasing onto propagate.
 
-        // TODO: Extract the time outside of world, add an assert at the end of this function to make sure outside-of-world-time is synced with in-world time
+        // TODO: Extract the time outside of world, so we don't have to make sure we didn't mess it up
         world.time.update();
         try simulateClient(&world, node.input, client_id);
 
@@ -67,21 +67,3 @@ pub fn resimulateFrom(
 
     return world;
 }
-// const ServerTimelineNode = struct {
-//     world: engine.World,
-//     inputs: [3]engine.Input, // This is currently in the world - I should probably change that
-// }
-
-// fn main() !void {
-//     const timeline: []ClientTimelineNode = undefined;
-//     const input: engine.Input = undefined;
-//     _ = input; // autofix
-
-//     for (timeline) |item| {
-//         const world = item.world.clone();
-//         for (item.snapshots) |snapshot| {
-//             apply(snapshot);
-//         }
-//         simulate(world, input);
-//     }
-// }

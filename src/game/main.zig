@@ -26,9 +26,9 @@ pub fn main() anyerror!void {
     const client_id = net.ClientId{ .value = options.options.@"client-id" };
     const is_server = options.options.server;
 
-    std.debug.print("is server!: {}\n", .{is_server});
+    std.log.info("is server!: {}\n", .{is_server});
     if (!is_server) {
-        std.debug.print("client id: {}\n", .{client_id});
+        std.log.info("client id: {}\n", .{client_id});
     }
 
     var debug_alloc = std.heap.DebugAllocator(.{}).init;
@@ -146,7 +146,7 @@ pub fn main() anyerror!void {
                     const time_before = world.time.frame_number;
                     world = try simulation.resimulateFrom(&c.timeline, client_id, snapshot_frame);
                     if (time_before != world.time.frame_number) {
-                        std.debug.print("Time mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
+                        std.log.warn("Time mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
                         unreachable;
                     }
                     c.timeline.freeBlock(c.timeline.dropFrame(snapshot_frame));
@@ -164,7 +164,7 @@ pub fn main() anyerror!void {
                 );
             },
         }
-        // std.debug.print("Finished simulating frame {}\n", .{world.time.frame_number});
+        // std.log.debug("Finished simulating frame {}\n", .{world.time.frame_number});
 
         // Draw
         try drawGame(&world, &network);
@@ -199,35 +199,35 @@ fn waitForNextFrame(world: *const engine.World, network: *net.NetworkState) void
 }
 
 fn debugClientState(c: *net.Client) void {
-    std.debug.print("==== Timeline Start =====\n", .{});
+    std.log.debug("==== Timeline Start =====\n", .{});
     {
         var frame_number = c.timeline.first_frame;
         while (frame_number < c.timeline.first_frame + c.timeline.len) : (frame_number += 1) {
             const my_world = (try c.timeline.at(frame_number)).world;
-            std.debug.print("position: {}\n", .{my_world.time.frame_number});
+            std.log.debug("position: {}\n", .{my_world.time.frame_number});
         }
     }
-    std.debug.print("===== Timeline End / Snapshots Start ===== \n", .{});
+    std.log.debug("===== Timeline End / Snapshots Start ===== \n", .{});
     {
         var frame_number = c.server_snapshots.list.first_frame;
         while (frame_number < c.server_snapshots.list.first_frame + c.server_snapshots.list.len) : (frame_number += 1) {
             const snapshot = try c.server_snapshots.list.at(frame_number);
-            std.debug.print("snapshots: {any}\n", .{snapshot.snapshots.items});
+            std.log.debug("snapshots: {any}\n", .{snapshot.snapshots.items});
         }
     }
-    std.debug.print("===== Snapshots End ===== \n", .{});
+    std.log.debug("===== Snapshots End ===== \n", .{});
 }
 
 fn debugServerState(s: *net.Server) !void {
-    std.debug.print("==== Inputs Start ===== \n", .{});
+    std.log.debug("==== Inputs Start ===== \n", .{});
     {
         var frame_number = s.input.list.first_frame;
         while (frame_number < s.input.list.first_frame + s.input.list.len) : (frame_number += 1) {
             const inputs = try s.input.list.at(frame_number);
-            std.debug.print("inputs: {}\n", .{inputs});
+            std.log.debug("inputs: {}\n", .{inputs});
         }
     }
-    std.debug.print("===== Inputs End ===== \n", .{});
+    std.log.debug("===== Inputs End ===== \n", .{});
 }
 
 fn drawGame(world: *engine.World, network: *net.NetworkState) !void {

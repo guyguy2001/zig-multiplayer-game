@@ -31,9 +31,7 @@ pub const Client = struct {
     pub fn deinit(self: *@This()) void {
         posix.close(self.socket);
         self.server_snapshots.deinit();
-        while (self.timeline.len > 0) {
-            self.timeline.freeBlock(self.timeline.dropFrame(self.timeline.first_frame));
-        }
+        self.timeline.shallowDeinit();
     }
 };
 
@@ -77,7 +75,7 @@ pub const SnapshotsBuffer = struct {
         }
 
         var entry = self.list.at(part.frame_number) catch |err| {
-            std.debug.print("client: Failure at `at` - {}\n", .{err});
+            std.log.err("client: Failure at `at` - {}\n", .{err});
             // TODO: Why do I even catch here?
             return;
         };
@@ -86,8 +84,8 @@ pub const SnapshotsBuffer = struct {
 
     pub fn onSnapshotDoneReceived(self: *@This(), message: protocol.FinishedSendingSnapshotsMessage) !void {
         var entry = self.list.at(message.frame_number) catch {
-            std.debug.print(
-                "W: Received too old of a frame ({d}, first is {d})\n",
+            std.log.warn(
+                "Received too old of a frame ({d}, first is {d})\n",
                 .{ message.frame_number, self.list.first_frame },
             );
             return;
@@ -102,10 +100,9 @@ pub const SnapshotsBuffer = struct {
 
     // This seems like it's shared between this and ther server's
     pub fn consumeFrame(self: *@This(), frame_number: u64) !FrameSnapshots {
-        // std.debug.print("F{d} Consume\n", .{frame_number});
+        // std.log.debug("F{d} Consume\n", .{frame_number});
         if (self.list.first_frame != frame_number) {
-            // TODO should this even be a parameter? evidently yes
-            std.debug.print("ERROR: Tried consuming frame {d} while we're still on frame {d}\n", .{ frame_number, self.list.first_frame });
+            std.log.err("Tried consuming frame {d} while we're still on frame {d}\n", .{ frame_number, self.list.first_frame });
             return error.WrongFrameNumber;
         }
         const block = self.list.dropFrame(frame_number);
@@ -135,7 +132,7 @@ pub fn handleIncomingMessages(c: *Client) !root.HandleIncomingMessagesResult {
         _, const message = utils.clientReceiveMessage(c.socket) catch |err| {
             switch (err) {
                 error.ConnectionResetByPeer, error.ConnectionTimedOut => {
-                    std.debug.print("Disconnected by peer!\n", .{});
+                    std.log.err("Disconnected by peer!\n", .{});
                     return .quit;
                 },
                 error.InvalidMessage => continue,

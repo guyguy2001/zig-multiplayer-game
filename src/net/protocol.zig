@@ -39,7 +39,9 @@ pub const InputMessage = packed struct {
 /// with metadata about when the input was sent and received, for the sake of synchronization.
 /// Currently unused for input reliability.
 pub const InputAckMessage = packed struct {
+    /// The frame on the client in which the input message we're ack'ing was sent.
     ack_frame_number: FrameNumber,
+    /// The frame on the server in which we received the input message.
     received_during_frame: FrameNumber,
 };
 

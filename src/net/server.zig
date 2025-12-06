@@ -12,9 +12,8 @@ const utils = @import("utils.zig");
 
 pub const Server = struct {
     socket: posix.socket_t,
+    // `client_addresses` is of length 3 to allow direct access to index 1 and 2 based on the network id.
     client_addresses: [3]?posix.sockaddr,
-    // TODO: Is it a good idea for this to also contain gameplay-logic-structs such as these?
-    // i.e. should I split it to ServerNetwork and ServerState?
     input: InputBuffer,
 
     pub fn hasMessageWaiting(self: *const @This()) !bool {
@@ -54,7 +53,7 @@ pub const Server = struct {
             const client_address, const message = utils.serverReceiveMessage(self.socket) catch |err| {
                 switch (err) {
                     error.ConnectionResetByPeer, error.ConnectionTimedOut => {
-                        std.debug.print("Disconnected by peer!\n", .{});
+                        std.log.err("Disconnected by peer!\n", .{});
                         return .quit;
                     },
                     error.InvalidMessage => continue,
@@ -75,10 +74,10 @@ pub const Server = struct {
         frame_number: lib.FrameNumber,
     ) !void {
         if (client_id.value >= self.client_addresses.len) {
-            std.debug.print("Client connected with id {d}, which is out of range!", .{client_id.value});
+            std.log.err("Client connected with id {d}, which is out of range!", .{client_id.value});
             return error.ConnectionMessageClientIdOutOfRange;
         }
-        std.debug.print("Client {d} connected!\n", .{client_id.value});
+        std.log.info("Client {d} connected!\n", .{client_id.value});
         self.client_addresses[client_id.value] = client_address;
         try utils.sendMessageToClient(self.socket, client_address, &protocol.ServerToClientMessage{
             .type = .connection_ack,
@@ -94,13 +93,14 @@ pub const Server = struct {
     }
 };
 const PlayersInput = struct {
+    // `list` is of length 3 to allow direct access to index 1 and 2 based on the network id.
     list: [3]?engine.Input,
 
     pub fn isFull(self: *@This()) bool {
         var i: usize = 1;
         while (i < 3) : (i += 1) {
             if (self.list[i] == null) {
-                // std.debug.print("null in entry {d}\n", .{i});
+                // std.log.debug("null in entry {d}\n", .{i});
                 return false;
             }
         }
@@ -121,10 +121,9 @@ pub const InputBuffer = struct {
     last_seen: [3]lib.FrameNumber,
 
     pub fn onInputReceived(self: *@This(), message: protocol.InputMessage) !void {
-        // std.debug.print("Received player {} frame {}\n", .{ message.client_id.value, message.frame_number });
-        std.debug.print("F{d} P{d} Input received \n", .{ message.frame_number, message.client_id.value });
-        var entry = self.list.at(message.frame_number) catch {
-            // std.debug.print("Failure at `at` - {}\n", .{err});
+        std.log.debug("F{d} P{d} Input received \n", .{ message.frame_number, message.client_id.value });
+        var entry = self.list.at(message.frame_number) catch |err| {
+            std.log.err("Invalid frame received in input message - {}\n", .{err});
             return;
         };
         entry.list[message.client_id.value] = message.input;
@@ -136,10 +135,10 @@ pub const InputBuffer = struct {
         return (try self.list.at(frame_number)).isFull();
     }
 
+    /// Drops the first frame from the input buffer, applying some additional calculations if needed,
+    /// and returning the input for each player for this frame.
+    /// Like `dropFrame`, this cannot accept any `frame_number` other than the first frame in this buffer.
     pub fn consumeFrame(self: *@This(), frame_number: u64) ![3]engine.Input {
-        if (self.list.first_frame != frame_number) {
-            unreachable; // TODO should this even be a parameter?
-        }
         const inputs = (try self.list.at(frame_number)).*;
         const block = self.list.dropFrame(frame_number);
         self.list.freeBlock(block);
@@ -149,7 +148,7 @@ pub const InputBuffer = struct {
                 self.current_state[i] = input;
                 self.last_seen[i] = frame_number;
             } else {
-                std.debug.print("E: Client {d} has no input for frame {d}!\n", .{ i, frame_number });
+                std.log.err("Client {d} has no input for frame {d}!\n", .{ i, frame_number });
                 if (frame_number - self.last_seen[i] > consts.stop_holding_input_threshold) {
                     self.current_state[i] = engine.Input.empty();
                 }
@@ -178,8 +177,6 @@ pub const InputBuffer = struct {
     }
 
     pub fn deinit(self: *@This()) void {
-        while (self.list.len > 0) {
-            self.list.freeBlock(self.list.dropFrame(self.list.first_frame));
-        }
+        self.list.shallowDeinit();
     }
 };

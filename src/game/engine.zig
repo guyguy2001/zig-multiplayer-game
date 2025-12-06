@@ -107,7 +107,7 @@ pub const Entity = struct {
 
     pub fn apply_diff(self: *@This(), diff: EntityDiff) !void {
         if (!self.id.equals(diff.id)) return error.DiffHasWrongId;
-        // std.debug.print("apply_diff on {?s} - ({d}, {d}) -> ({d}, {d})\n", .{
+        // std.log.debug("apply_diff on {?s} - ({d}, {d}) -> ({d}, {d})\n", .{
         //     self.name,
         //     self.position.x,
         //     self.position.y,

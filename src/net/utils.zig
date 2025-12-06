@@ -109,7 +109,7 @@ fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, cli
         };
 
         if (message.type != .connection_ack) {
-            std.debug.print("W: Got wrong message! {d}\n", .{message.type});
+            std.log.warn("Got wrong message! {d}\n", .{message.type});
             return null;
         }
         return message.message.connection_ack;
@@ -118,7 +118,13 @@ fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, cli
 }
 
 /// Connect to the server, and initialize the Client struct.
-pub fn connectToServer(id: root.ClientId, gpa: std.mem.Allocator) !struct { root.NetworkState, lib.FrameNumber } {
+/// Returns a tuple of:
+///     The `Server` struct, wrapped in the `NetworkState` union.
+///     The current frame on the server.
+pub fn connectToServer(id: root.ClientId, gpa: std.mem.Allocator) !struct {
+    root.NetworkState,
+    lib.FrameNumber,
+} {
     const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(socket);
     try posix.setsockopt(
@@ -161,7 +167,7 @@ pub fn setupServer(gpa: std.mem.Allocator) !root.NetworkState {
 
     try posix.bind(sock, &consts.server_bind_address.any, consts.server_bind_address.getOsSockLen());
 
-    std.debug.print("UDP Server listening on port {d}\n", .{consts.port});
+    std.log.info("UDP Server listening on port {d}\n", .{consts.port});
 
     const input = server.InputBuffer.init(gpa);
     errdefer input.deinit();
@@ -173,7 +179,7 @@ pub fn setupServer(gpa: std.mem.Allocator) !root.NetworkState {
 }
 
 pub fn sendInput(c: *const client.Client, input: engine.Input, frame_number: u64) !void {
-    // std.debug.print("F{d} sending input\n", .{frame_number});
+    // std.log.debug("F{d} sending input\n", .{frame_number});
     try sendMessageToServer(
         c.socket,
         c.server_address,
@@ -198,7 +204,7 @@ fn sendToAllClients(s: *const server.Server, message: *const protocol.ServerToCl
 
 pub fn sendSnapshots(s: *const server.Server, world: *engine.World) !void {
     var iter = world.entities.iter();
-    // std.debug.print("Sending frame {}\n", .{world.time.frame_number});
+    // std.log.debug("Sending frame {}\n", .{world.time.frame_number});
     while (iter.next()) |entity| {
         if (entity.network != null and
             (@mod(world.time.frame_number, 20) == 0 or // Periodically send positions in case of PL
@@ -220,5 +226,5 @@ pub fn sendSnapshots(s: *const server.Server, world: *engine.World) !void {
             .frame_number = world.time.frame_number,
         } },
     });
-    // std.debug.print("Sent snapshots for frame {}\n", .{world.time.frame_number});
+    // std.log.debug("Sent snapshots for frame {}\n", .{world.time.frame_number});
 }

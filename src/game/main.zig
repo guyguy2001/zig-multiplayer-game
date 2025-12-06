@@ -7,7 +7,6 @@ const lib = @import("lib");
 const net = @import("net");
 
 const consts = @import("consts.zig");
-const debug = @import("debug.zig");
 const engine = @import("engine.zig");
 const simulation = @import("simulation/root.zig");
 const game_net = @import("game_net.zig");
@@ -74,12 +73,11 @@ pub fn main() anyerror!void {
     world.state = .game;
     hideMenu(&world);
     spawnGame(&world);
-    var debug_flags = debug.DebugFlags{ .outgoing_pl_percent = 0 };
     var network: game_net.NetworkState, const starting_frame_numer: lib.FrameNumber =
         (if (is_server)
             .{ try game_net.setupServer(alloc), 0 }
         else
-            try game_net.connectToServer(client_id, alloc, &debug_flags));
+            try game_net.connectToServer(client_id, alloc));
     defer network.cleanup();
 
     world.time.frame_number = starting_frame_numer;

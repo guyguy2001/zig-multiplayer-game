@@ -4,10 +4,9 @@ const posix = std.posix;
 const lib = @import("lib");
 const net = @import("net");
 
-const client_struct = @import("client.zig");
-const debug = @import("debug.zig");
+const client = @import("client.zig");
 const engine = @import("engine.zig");
-const server_structs = @import("server.zig");
+const server = @import("server.zig");
 const simulation = @import("simulation/root.zig");
 const utils = @import("utils.zig");
 
@@ -24,99 +23,9 @@ pub const NetworkRole = enum {
     server,
 };
 
-pub const Server = struct {
-    socket: posix.socket_t,
-    client_addresses: [3]?posix.sockaddr,
-    // TODO: Is it a good idea for this to also contain gameplay-logic-structs such as these?
-    // i.e. should I split it to ServerNetwork and ServerState?
-    input: server_structs.InputBuffer,
-
-    pub fn hasMessageWaiting(self: *const @This()) !bool {
-        return net.utils.hasMessageWaiting(self.socket);
-    }
-
-    pub fn handleMessage(
-        self: *@This(),
-        frame_number: u64,
-        client_address: posix.sockaddr,
-        message: net.protocol.ClientToServerMessage,
-    ) !void {
-        switch (message.type) {
-            .input => {
-                const input_message = message.message.input;
-                try sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
-                    .type = .input_ack,
-                    .message = .{ .input_ack = net.protocol.InputAckMessage{
-                        .ack_frame_number = input_message.frame_number,
-                        .received_during_frame = frame_number,
-                    } },
-                });
-                try self.input.onInputReceived(input_message);
-            },
-            .connection => {
-                try self.onClientConnected(
-                    client_address,
-                    message.message.connection.client_id,
-                    frame_number,
-                );
-            },
-        }
-    }
-
-    pub fn onClientConnected(
-        self: *@This(),
-        client_address: posix.sockaddr,
-        client_id: ClientId,
-        frame_number: lib.FrameNumber,
-    ) !void {
-        if (client_id.value >= self.client_addresses.len) {
-            std.debug.print("Client connected with id {d}, which is out of range!", .{client_id.value});
-            return error.ConnectionMessageClientIdOutOfRange;
-        }
-        std.debug.print("Client {d} connected!\n", .{client_id.value});
-        self.client_addresses[client_id.value] = client_address;
-        try sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
-            .type = .connection_ack,
-            .message = .{ .connection_ack = net.protocol.ConnectionAckMessage{
-                .frame_number = frame_number,
-            } },
-        });
-    }
-
-    pub fn deinit(self: *@This()) void {
-        posix.close(self.socket);
-        self.input.deinit();
-    }
-};
-
-pub const Client = struct {
-    id: ClientId,
-    socket: posix.socket_t,
-    server_address: posix.sockaddr,
-    ack_server_frame: lib.FrameNumber = 0,
-    snapshot_done_server_frame: lib.FrameNumber = 0,
-    simulation_speed_multiplier: f32 = 1,
-    server_snapshots: client_struct.SnapshotsBuffer,
-    timeline: simulation.ClientTimeline,
-    last_frame_nanos: ?i128 = null,
-    debug_flags: *debug.DebugFlags,
-
-    pub fn hasMessageWaiting(self: *const @This()) !bool {
-        return net.utils.hasMessageWaiting(self.socket);
-    }
-
-    pub fn deinit(self: *@This()) void {
-        posix.close(self.socket);
-        self.server_snapshots.deinit();
-        while (self.timeline.len > 0) {
-            self.timeline.freeBlock(self.timeline.dropFrame(self.timeline.first_frame));
-        }
-    }
-};
-
 pub const NetworkState = union(NetworkRole) {
-    client: Client,
-    server: Server,
+    client: client.Client,
+    server: server.Server,
 
     pub fn cleanup(self: *@This()) void {
         switch (self.*) {
@@ -216,7 +125,8 @@ fn tryConnectInLoop(socket: posix.socket_t, target_address: std.net.Address, cli
     return error.ConnectionFailedAfterManyAttempts;
 }
 
-pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug.DebugFlags) !struct { NetworkState, lib.FrameNumber } {
+/// Connect to the server, and initialize the Client struct.
+pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !struct { NetworkState, lib.FrameNumber } {
     const socket = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(socket);
     try posix.setsockopt(
@@ -235,13 +145,12 @@ pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator, debug_flags: *debug
     timeline.first_frame = frame_number + 1;
 
     return .{
-        NetworkState{ .client = Client{
+        NetworkState{ .client = client.Client{
             .socket = socket,
             .server_address = server_address.any,
             .id = id,
             .server_snapshots = .init(gpa),
             .timeline = timeline,
-            .debug_flags = debug_flags,
         } },
         frame_number,
     };
@@ -261,24 +170,24 @@ pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
 
     std.debug.print("UDP Server listening on port {d}\n", .{port});
 
-    const input = server_structs.InputBuffer.init(gpa);
+    const input = server.InputBuffer.init(gpa);
     errdefer input.deinit();
-    return NetworkState{ .server = Server{
+    return NetworkState{ .server = server.Server{
         .socket = sock,
         .client_addresses = .{null} ** 3,
         .input = input,
     } };
 }
 
-pub fn sendInput(client: *const Client, input: engine.Input, frame_number: u64) !void {
+pub fn sendInput(c: *const client.Client, input: engine.Input, frame_number: u64) !void {
     // std.debug.print("F{d} sending input\n", .{frame_number});
     try sendMessageToServer(
-        client.socket,
-        client.server_address,
+        c.socket,
+        c.server_address,
         &net.protocol.ClientToServerMessage{
             .type = .input,
             .message = .{ .input = net.protocol.InputMessage{
-                .client_id = client.id,
+                .client_id = c.id,
                 .input = input,
                 .frame_number = frame_number,
             } },
@@ -286,17 +195,15 @@ pub fn sendInput(client: *const Client, input: engine.Input, frame_number: u64) 
     );
 }
 
-fn sendToAllClients(server: *const Server, message: *const net.protocol.ServerToClientMessage) !void {
-    for (server.client_addresses) |c| {
+fn sendToAllClients(s: *const server.Server, message: *const net.protocol.ServerToClientMessage) !void {
+    for (s.client_addresses) |c| {
         if (c) |address| {
-            // std.debug.print("P{any} ", .{address});
-            try sendMessageToClient(server.socket, address, message);
+            try sendMessageToClient(s.socket, address, message);
         }
     }
-    // std.debug.print("\n", .{});
 }
 
-pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
+pub fn sendSnapshots(s: *const server.Server, world: *engine.World) !void {
     var iter = world.entities.iter();
     // std.debug.print("Sending frame {}\n", .{world.time.frame_number});
     while (iter.next()) |entity| {
@@ -305,7 +212,7 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
                 // Otherwise, only change modified entities
                 world.entities.modified_this_frame[entity.id.index]))
         {
-            try sendToAllClients(server, &net.protocol.ServerToClientMessage{
+            try sendToAllClients(s, &net.protocol.ServerToClientMessage{
                 .type = .snapshot_part,
                 .message = .{ .snapshot_part = net.protocol.SnapshotPartMessage{
                     .entity_diff = entity.make_diff(),
@@ -314,7 +221,7 @@ pub fn sendSnapshots(server: *const Server, world: *engine.World) !void {
             });
         }
     }
-    try sendToAllClients(server, &net.protocol.ServerToClientMessage{
+    try sendToAllClients(s, &net.protocol.ServerToClientMessage{
         .type = .finished_sending_snapshots,
         .message = .{ .finished_sending_snapshots = net.protocol.FinishedSendingSnapshotsMessage{
             .frame_number = world.time.frame_number,

@@ -1,11 +1,38 @@
 const std = @import("std");
+const posix = std.posix;
 
+// const simulation = game.simulation;
 const lib = @import("lib");
 const net = @import("net");
 
 const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const game_net = @import("game_net.zig");
+const simulation = @import("simulation/root.zig");
+
+pub const Client = struct {
+    id: game_net.ClientId,
+    socket: posix.socket_t,
+    server_address: posix.sockaddr,
+    ack_server_frame: lib.FrameNumber = 0,
+    snapshot_done_server_frame: lib.FrameNumber = 0,
+    simulation_speed_multiplier: f32 = 1,
+    server_snapshots: SnapshotsBuffer,
+    timeline: simulation.ClientTimeline,
+    last_frame_nanos: ?i128 = null,
+
+    pub fn hasMessageWaiting(self: *const @This()) !bool {
+        return net.utils.hasMessageWaiting(self.socket);
+    }
+
+    pub fn deinit(self: *@This()) void {
+        posix.close(self.socket);
+        self.server_snapshots.deinit();
+        while (self.timeline.len > 0) {
+            self.timeline.freeBlock(self.timeline.dropFrame(self.timeline.first_frame));
+        }
+    }
+};
 
 pub const FrameSnapshots = struct {
     // Thoughts:
@@ -105,7 +132,7 @@ pub const HandleIncomingMessagesResult = enum {
     quit,
 };
 
-pub fn handleIncomingMessages(c: *game_net.Client) !HandleIncomingMessagesResult {
+pub fn handleIncomingMessages(c: *Client) !HandleIncomingMessagesResult {
     while (try c.hasMessageWaiting()) {
         _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
             if (err == error.ConnectionResetByPeer or err == error.Timeout) {

@@ -8,6 +8,70 @@ const consts = @import("consts.zig");
 const engine = @import("engine.zig");
 const game_net = @import("game_net.zig");
 
+pub const Server = struct {
+    socket: posix.socket_t,
+    client_addresses: [3]?posix.sockaddr,
+    // TODO: Is it a good idea for this to also contain gameplay-logic-structs such as these?
+    // i.e. should I split it to ServerNetwork and ServerState?
+    input: InputBuffer,
+
+    pub fn hasMessageWaiting(self: *const @This()) !bool {
+        return net.utils.hasMessageWaiting(self.socket);
+    }
+
+    pub fn handleMessage(
+        self: *@This(),
+        frame_number: u64,
+        client_address: posix.sockaddr,
+        message: net.protocol.ClientToServerMessage,
+    ) !void {
+        switch (message.type) {
+            .input => {
+                const input_message = message.message.input;
+                try game_net.sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
+                    .type = .input_ack,
+                    .message = .{ .input_ack = net.protocol.InputAckMessage{
+                        .ack_frame_number = input_message.frame_number,
+                        .received_during_frame = frame_number,
+                    } },
+                });
+                try self.input.onInputReceived(input_message);
+            },
+            .connection => {
+                try self.onClientConnected(
+                    client_address,
+                    message.message.connection.client_id,
+                    frame_number,
+                );
+            },
+        }
+    }
+
+    pub fn onClientConnected(
+        self: *@This(),
+        client_address: posix.sockaddr,
+        client_id: game_net.ClientId,
+        frame_number: lib.FrameNumber,
+    ) !void {
+        if (client_id.value >= self.client_addresses.len) {
+            std.debug.print("Client connected with id {d}, which is out of range!", .{client_id.value});
+            return error.ConnectionMessageClientIdOutOfRange;
+        }
+        std.debug.print("Client {d} connected!\n", .{client_id.value});
+        self.client_addresses[client_id.value] = client_address;
+        try game_net.sendMessageToClient(self.socket, client_address, &net.protocol.ServerToClientMessage{
+            .type = .connection_ack,
+            .message = .{ .connection_ack = net.protocol.ConnectionAckMessage{
+                .frame_number = frame_number,
+            } },
+        });
+    }
+
+    pub fn deinit(self: *@This()) void {
+        posix.close(self.socket);
+        self.input.deinit();
+    }
+};
 const PlayersInput = struct {
     list: [3]?engine.Input,
 

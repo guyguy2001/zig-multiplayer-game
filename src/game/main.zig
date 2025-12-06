@@ -117,11 +117,15 @@ pub fn main() anyerror!void {
             .server => |*s| {
                 while (try s.hasMessageWaiting()) {
                     const client_address, const message = game_net.serverReceiveMessage(s.socket) catch |err| {
-                        if (err == error.ConnectionResetByPeer) {
-                            std.debug.print("Disconnected by peer!\n", .{});
-                            break :main_loop;
-                        } else {
-                            return err;
+                        switch (err) {
+                            error.ConnectionResetByPeer, error.Timeout => {
+                                std.debug.print("Disconnected by peer!\n", .{});
+                                return .quit;
+                            },
+                            error.InvalidMessage => continue,
+                            _ => {
+                                return err;
+                            },
                         }
                     };
                     try s.handleMessage(world.time.frame_number, client_address, message);

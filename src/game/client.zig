@@ -135,11 +135,15 @@ pub const HandleIncomingMessagesResult = enum {
 pub fn handleIncomingMessages(c: *Client) !HandleIncomingMessagesResult {
     while (try c.hasMessageWaiting()) {
         _, const message = game_net.clientReceiveMessage(c.socket) catch |err| {
-            if (err == error.ConnectionResetByPeer or err == error.Timeout) {
-                std.debug.print("Disconnected by peer!\n", .{});
-                return .quit;
-            } else {
-                return err;
+            switch (err) {
+                error.ConnectionResetByPeer, error.Timeout => {
+                    std.debug.print("Disconnected by peer!\n", .{});
+                    return .quit;
+                },
+                error.InvalidMessage => continue,
+                _ => {
+                    return err;
+                },
             }
         };
         switch (message.type) {

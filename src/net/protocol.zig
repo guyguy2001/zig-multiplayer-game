@@ -68,6 +68,14 @@ pub const ClientToServerMessage = packed struct {
         input: InputMessage,
     },
 
+    pub fn isTypeValid(id: u8) bool {
+        return switch (@as(ClientToServerMessageType, @enumFromInt(id))) {
+            .connection => true,
+            .input => true,
+            else => false,
+        };
+    }
+
     pub fn sizeOf(self: *const @This()) usize {
         const prefix_size = @bitSizeOf(@TypeOf(self.type));
         const payload_size: usize = switch (self.type) {
@@ -93,6 +101,16 @@ pub const ServerToClientMessage = packed struct {
         finished_sending_snapshots: FinishedSendingSnapshotsMessage,
         input_ack: InputAckMessage,
     },
+
+    pub fn isTypeValid(id: u8) bool {
+        return switch (@as(ServerToClientMessageType, @enumFromInt(id))) {
+            .connection_ack => true,
+            .snapshot_part => true,
+            .finished_sending_snapshots => true,
+            .input_ack => true,
+            else => false,
+        };
+    }
 
     pub fn sizeOf(self: *const @This()) usize {
         const prefix_size = @bitSizeOf(@TypeOf(self.type));

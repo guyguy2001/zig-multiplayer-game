@@ -78,11 +78,21 @@ fn receiveMessage(T: type, sock: posix.socket_t) !struct { posix.sockaddr, T } {
 
     const len = try posix.recvfrom(sock, @ptrCast(&message), 0, &address, &addrlen);
     if (len < 2) {
-        @panic("Received too small of a message");
+        std.log.err("Received too small of a message\n", .{});
+        return error.InvalidMessage;
     }
-    // TODO: add validation that the id is of the enum. Maybe further validations for the payload
+    // Roundabout way of making sure the `type` enum value is valid.
+    _ = std.enums.fromInt(@TypeOf(message.type), @intFromEnum(message.type)) orelse {
+        std.log.err("Received invalid message type: {}\n", .{message.type});
+        return error.InvalidMessage;
+    };
     if (len != message.sizeOf()) {
-        @panic("Message has incorrect size");
+        std.log.err("Message has incorrect size - expected {}, found {} (for message type {})\n", .{
+            message.sizeOf(),
+            len,
+            message.type,
+        });
+        return error.InvalidMessage;
     }
     return .{ address, message };
 }
@@ -141,7 +151,7 @@ pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !struct { NetworkSt
 
     const frame_number = if (message) |msg| msg.frame_number else 0;
     var timeline: simulation.ClientTimeline = .init(gpa);
-    std.debug.print("First frame {d}\n", .{frame_number});
+    std.log.info("First frame {d}\n", .{frame_number});
     timeline.first_frame = frame_number + 1;
 
     return .{
@@ -156,6 +166,7 @@ pub fn connectToServer(id: ClientId, gpa: std.mem.Allocator) !struct { NetworkSt
     };
 }
 
+/// Start listening for client connections, and initialize the server struct.
 pub fn setupServer(gpa: std.mem.Allocator) !NetworkState {
     const sock = try posix.socket(posix.AF.INET, posix.SOCK.DGRAM, posix.IPPROTO.UDP);
     errdefer posix.close(sock);

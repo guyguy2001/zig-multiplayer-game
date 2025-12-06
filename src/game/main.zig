@@ -112,12 +112,13 @@ pub fn main() anyerror!void {
 
                 try net.utils.sendInput(c, input, world.time.frame_number);
 
-                while (c.server_snapshots.len() > 0 and try c.server_snapshots.isFrameReady(c.server_snapshots.firstFrame())) {
+                while (c.server_snapshots.len() > 0) {
                     // Look at the first snapshot (frame n-k), apply it to frame n-k in the timeline,
                     // then re-simulate frames n-k+1 to n-1, inclusive.
 
                     const snapshot_frame = c.server_snapshots.firstFrame();
-                    if (snapshot_frame >= world.time.frame_number - 1) {
+                    if (snapshot_frame >= world.time.frame_number) {
+                        // Do not try to simulate frames which aren't yet in the timeline.
                         break;
                     }
                     var snapshots = try c.server_snapshots.consumeFrame(snapshot_frame);
@@ -132,6 +133,9 @@ pub fn main() anyerror!void {
                         std.log.warn("Snapshot frame {d} not present in timeline {d}+\n", .{ snapshot_frame, c.timeline.first_frame });
                         continue;
                     }
+
+                    // Now that we know `snapshot_frame` is in c.timeline, make sure to defer cleaning it up
+                    defer c.timeline.freeBlock(c.timeline.dropFrame(snapshot_frame));
 
                     if (!snapshots.is_done) {
                         std.log.warn("F{d} snapshots aren't done\n", .{snapshot_frame});
@@ -149,7 +153,6 @@ pub fn main() anyerror!void {
                         std.log.warn("Time mismatch! {d}!={d}\n", .{ time_before, world.time.frame_number });
                         unreachable;
                     }
-                    c.timeline.freeBlock(c.timeline.dropFrame(snapshot_frame));
                     // Now frame n-1 is updated with knowledge of my authoritative position of n-k
                 }
                 // Simulate frame n

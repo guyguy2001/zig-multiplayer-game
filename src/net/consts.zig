@@ -18,5 +18,5 @@ pub const simulation_speed = struct {
     pub const max_speedup = 10;
     pub const max_slowdown = 0.1;
     // How much to change the speed per missing frame.
-    pub const speedup_intensity = 0.1;
+    pub const speedup_intensity = 0.025;
 };

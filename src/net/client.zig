@@ -70,8 +70,11 @@ pub const SnapshotsBuffer = struct {
 
     pub fn onSnapshotPartReceived(self: *@This(), part: protocol.SnapshotPartMessage) !void {
         // Mark all previous frames as done, even if the "done" message hadn't arrived
-        for (self.list.first_frame..part.frame_number) |frame| {
-            (try self.list.at(frame)).is_done = true;
+        std.debug.print("Snapshot part received, {}, {}\n", .{ self.list.first_frame, part.frame_number });
+        if (part.frame_number > self.list.first_frame) {
+            for (self.list.first_frame..part.frame_number) |frame| {
+                (try self.list.at(frame)).is_done = true;
+            }
         }
 
         var entry = self.list.at(part.frame_number) catch |err| {
